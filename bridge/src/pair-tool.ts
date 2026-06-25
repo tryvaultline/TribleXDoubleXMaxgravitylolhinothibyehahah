@@ -76,6 +76,14 @@ async function pair() {
     const localIp = getLocalIp();
     const computerName = os.hostname();
     
+    console.log("\n=== Pairing Session Details ===");
+    console.log(`Computer Name: ${computerName}`);
+    console.log(`Local IP:      ${localIp}`);
+    console.log(`Session ID:    ${session.sessionId}`);
+    console.log(`Token:         ${session.token}`);
+    console.log(`Expires At:    ${session.expiresAt}`);
+    console.log("===============================\n");
+    
     // Generate static HTML pairing page
     const htmlContent = `
 <!DOCTYPE html>

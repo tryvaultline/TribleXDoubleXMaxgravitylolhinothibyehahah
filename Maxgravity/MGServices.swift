@@ -424,6 +424,27 @@ class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository,
     func getTask(taskId: String) async throws -> MGChatSummary {
         return try await performRequest(path: "/v1/tasks/\(taskId)")
     }
+    
+    // MGSpacesRepository, MGTasksRepository, MGActivityRepository, MGWorkspaceRepository conformance
+    func spaces() async throws -> [MGSpaceSummary] {
+        return try await listSpaces()
+    }
+    
+    func models() async throws -> [MGModelOption] {
+        return try await availableModels()
+    }
+    
+    func activityBuckets() async throws -> [MGActivityBucket] {
+        return try await listActivity()
+    }
+    
+    func schedules() async throws -> [MGScheduledTask] {
+        return try await listSchedules()
+    }
+    
+    func roots() async throws -> [MGRemoteFileNode] {
+        return try await approvedRoots()
+    }
 }
 
 class MGTrustAllCertsDelegate: NSObject, URLSessionDelegate {

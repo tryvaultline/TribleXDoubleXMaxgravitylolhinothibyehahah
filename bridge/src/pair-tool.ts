@@ -46,7 +46,8 @@ async function startBridge(): Promise<void> {
   const child = spawn(npmCmd, ["run", "dev"], {
     cwd: join(projectRoot, "bridge"),
     detached: true,
-    stdio: "ignore"
+    stdio: "ignore",
+    shell: process.platform === "win32"
   });
   child.unref();
 

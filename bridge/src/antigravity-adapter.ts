@@ -265,7 +265,8 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
           ...process.env,
           ANTIGRAVITY_LS_ADDRESS: session.address,
           ANTIGRAVITY_CSRF_TOKEN: session.token
-        }
+        },
+        shell: process.platform === "win32"
       });
       child.on("close", (code) => {
         if (code !== 0) {
@@ -287,7 +288,8 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
         ...process.env,
         ANTIGRAVITY_LS_ADDRESS: session.address,
         ANTIGRAVITY_CSRF_TOKEN: session.token
-      }
+      },
+      shell: process.platform === "win32"
     });
 
     let output = "";

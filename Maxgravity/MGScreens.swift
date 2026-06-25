@@ -1237,7 +1237,7 @@ struct MGPairingCodeSheet: View {
                     MGHaptics.selection()
                     
                     if let data = scannedCode.data(using: .utf8),
-                       let payload = try? JSONDecoder().decode(MGPairingQRCodePayload.self, from: data) {
+                       let payload = try? JSONDecoder.mgDecoder.decode(MGPairingQRCodePayload.self, from: data) {
                         self.state = .confirmation(payload: payload)
                     } else {
                         self.state = .error(message: "Invalid QR code payload format.")
@@ -1341,7 +1341,12 @@ struct MGPairingCodeSheet: View {
             let meta = try JSONDecoder().decode(TempMetadata.self, from: data)
             
             let df = ISO8601DateFormatter()
-            let expiryDate = df.date(from: meta.expiresAt) ?? Date().addingTimeInterval(300)
+            df.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let expiryDate = df.date(from: meta.expiresAt) ?? {
+                let df2 = ISO8601DateFormatter()
+                df2.formatOptions = [.withInternetDateTime]
+                return df2.date(from: meta.expiresAt)
+            }() ?? Date().addingTimeInterval(300)
             
             let payload = MGPairingQRCodePayload(
                 sessionId: meta.sessionId,

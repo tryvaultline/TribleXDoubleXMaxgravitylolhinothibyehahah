@@ -225,8 +225,7 @@ class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository,
             throw NSError(domain: "MGRealBridgeClient", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: errString])
         }
         
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        let decoder = JSONDecoder.mgDecoder
         return try decoder.decode(T.self, from: data)
     }
 

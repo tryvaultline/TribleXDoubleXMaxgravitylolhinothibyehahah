@@ -70,6 +70,31 @@ extension DateFormatter {
     }()
 }
 
+extension JSONDecoder {
+    static let mgDecoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let dateStr = try container.decode(String.self)
+            
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatter.date(from: dateStr) {
+                return date
+            }
+            
+            let formatter2 = ISO8601DateFormatter()
+            formatter2.formatOptions = [.withInternetDateTime]
+            if let date = formatter2.date(from: dateStr) {
+                return date
+            }
+            
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode date string \(dateStr)")
+        }
+        return decoder
+    }()
+}
+
 extension View {
     func mgSectionCardPadding() -> some View {
         padding(.horizontal, 16)

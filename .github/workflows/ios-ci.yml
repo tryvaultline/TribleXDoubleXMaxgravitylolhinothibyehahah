@@ -1,0 +1,33 @@
+name: iOS CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select latest Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build Maxgravity
+        run: >
+          xcodebuild
+          -project Maxgravity.xcodeproj
+          -target Maxgravity
+          -destination 'generic/platform=iOS Simulator'
+          -sdk iphonesimulator
+          CODE_SIGNING_ALLOWED=NO
+          build

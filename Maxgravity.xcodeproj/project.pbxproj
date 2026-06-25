@@ -14,6 +14,8 @@
 		0A100005B1C1D1E1F1A10001 /* MGComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A100015B1C1D1E1F1A10001 /* MGComponents.swift */; };
 		0A100006B1C1D1E1F1A10001 /* MGScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A100016B1C1D1E1F1A10001 /* MGScreens.swift */; };
 		0A100007B1C1D1E1F1A10001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0A100017B1C1D1E1F1A10001 /* Assets.xcassets */; };
+		0A100008B1C1D1E1F1A10001 /* FloatingPanel in Frameworks */ = {isa = PBXBuildFile; productRef = 0A100091B1C1D1E1F1A10001 /* FloatingPanel */; };
+		0A100009B1C1D1E1F1A10001 /* LiquidGlassKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0A100092B1C1D1E1F1A10001 /* LiquidGlassKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,6 +35,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0A100008B1C1D1E1F1A10001 /* FloatingPanel in Frameworks */,
+				0A100009B1C1D1E1F1A10001 /* LiquidGlassKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -86,6 +90,10 @@
 			dependencies = (
 			);
 			name = Maxgravity;
+			packageProductDependencies = (
+				0A100091B1C1D1E1F1A10001 /* FloatingPanel */,
+				0A100092B1C1D1E1F1A10001 /* LiquidGlassKit */,
+			);
 			productName = Maxgravity;
 			productReference = 0A100010B1C1D1E1F1A10001 /* Maxgravity.app */;
 			productType = "com.apple.product-type.application";
@@ -114,6 +122,10 @@
 				Base,
 			);
 			mainGroup = 0A100030B1C1D1E1F1A10001;
+			packageReferences = (
+				0A100090B1C1D1E1F1A10001 /* XCRemoteSwiftPackageReference "FloatingPanel" */,
+				0A100093B1C1D1E1F1A10001 /* XCRemoteSwiftPackageReference "LiquidGlassKit" */,
+			);
 			productRefGroup = 0A100032B1C1D1E1F1A10001 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -149,6 +161,38 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		0A100090B1C1D1E1F1A10001 /* XCRemoteSwiftPackageReference "FloatingPanel" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/scenee/FloatingPanel.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = "3.2.1";
+			};
+		};
+		0A100093B1C1D1E1F1A10001 /* XCRemoteSwiftPackageReference "LiquidGlassKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/DnV1eX/LiquidGlassKit.git";
+			requirement = {
+				branch = master;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0A100091B1C1D1E1F1A10001 /* FloatingPanel */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0A100090B1C1D1E1F1A10001 /* XCRemoteSwiftPackageReference "FloatingPanel" */;
+			productName = FloatingPanel;
+		};
+		0A100092B1C1D1E1F1A10001 /* LiquidGlassKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0A100093B1C1D1E1F1A10001 /* XCRemoteSwiftPackageReference "LiquidGlassKit" */;
+			productName = LiquidGlassKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		0A100080B1C1D1E1F1A10001 /* Debug */ = {

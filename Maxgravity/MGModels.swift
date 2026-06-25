@@ -1,41 +1,15 @@
 import Foundation
 
-enum AppTab: String, CaseIterable, Identifiable, Hashable {
-    case spaces
-    case activity
-    case settings
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .spaces: "Spaces"
-        case .activity: "Activity"
-        case .settings: "Settings"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .spaces: "square.grid.2x2"
-        case .activity: "bolt.horizontal"
-        case .settings: "gearshape"
-        }
-    }
-}
-
 enum Route: Hashable {
-    case newTask(spaceID: String)
     case chat(chatID: String)
     case taskDetail(chatID: String, segment: MGTaskDetailSegment)
     case codeViewer(fileRef: String)
     case diffViewer(fileRef: String)
 }
 
-enum SheetDestination: Hashable, Identifiable {
+enum MGSheetDestination: Hashable, Identifiable {
     case connectionInfo
     case modelPicker
-    case plusMenu
     case slashCommands
     case fileMentions
     case taskContext
@@ -48,7 +22,6 @@ enum SheetDestination: Hashable, Identifiable {
         switch self {
         case .connectionInfo: "connectionInfo"
         case .modelPicker: "modelPicker"
-        case .plusMenu: "plusMenu"
         case .slashCommands: "slashCommands"
         case .fileMentions: "fileMentions"
         case .taskContext: "taskContext"
@@ -58,6 +31,25 @@ enum SheetDestination: Hashable, Identifiable {
         case .pairingCode: "pairingCode"
         }
     }
+}
+
+enum MGFullScreenDestination: Hashable, Identifiable {
+    case newTask(spaceID: String)
+    case plusMenu
+
+    var id: String {
+        switch self {
+        case .newTask(let spaceID): "newTask-\(spaceID)"
+        case .plusMenu: "plusMenu"
+        }
+    }
+}
+
+enum MGPanelDestination: String, Hashable, Identifiable {
+    case activity
+    case settings
+
+    var id: String { rawValue }
 }
 
 enum MGPermissionMode: String, CaseIterable, Identifiable, Codable {
@@ -74,6 +66,15 @@ enum MGPermissionMode: String, CaseIterable, Identifiable, Codable {
         case .askWhenNeeded: "Ask when needed"
         case .sensitiveAutoReview: "Sensitive auto-review"
         case .fullAccess: "Full access"
+        }
+    }
+
+    var summary: String {
+        switch self {
+        case .sandbox: "Bridge-limited safe operations only"
+        case .askWhenNeeded: "Prompt before elevated actions"
+        case .sensitiveAutoReview: "Auto-review risky actions before asking"
+        case .fullAccess: "Desktop-only unrestricted mode"
         }
     }
 }
@@ -125,6 +126,47 @@ enum MGMessageRole: Hashable {
     case assistant
 }
 
+enum MGCapabilityState: String, CaseIterable, Hashable {
+    case live
+    case partial
+    case mock
+    case unsupported
+
+    var title: String {
+        rawValue.capitalized
+    }
+
+    var tone: MGActivityTone {
+        switch self {
+        case .live: .good
+        case .partial: .warning
+        case .mock: .neutral
+        case .unsupported: .critical
+        }
+    }
+}
+
+struct MGBridgeCapability: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let state: MGCapabilityState
+    let detail: String
+}
+
+struct MGPairingQRCodePayload: Hashable, Codable {
+    let address: String
+    let token: String
+    let desktopFingerprint: String
+    let expiresAt: Date
+}
+
+struct MGTrustedDevice: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let addedAt: Date
+    let fingerprint: String
+}
+
 struct MGComputerStatus: Identifiable, Hashable {
     let id: String
     var computerName: String
@@ -133,6 +175,9 @@ struct MGComputerStatus: Identifiable, Hashable {
     var lastSync: Date
     var encryption: String
     var supportedPermissionModes: [MGPermissionMode]
+    var connectionAddress: String
+    var pairing: MGCapabilityState
+    var liveBridge: MGCapabilityState
 }
 
 struct MGModelOption: Identifiable, Hashable {
@@ -140,6 +185,7 @@ struct MGModelOption: Identifiable, Hashable {
     let title: String
     let subtitle: String?
     let isRecommended: Bool
+    let availability: MGCapabilityState
 }
 
 struct MGTaskContext: Hashable {
@@ -219,6 +265,7 @@ struct MGTaskThread: Hashable {
     let id: String
     var title: String
     var stateText: String
+    var stateTone: MGActivityTone
     var messages: [MGThreadMessage]
     var timeline: [MGActivityEvent]
     var files: [String]
@@ -280,4 +327,11 @@ struct MGRemoteFileNode: Identifiable, Hashable {
     var optionalChildren: [MGRemoteFileNode]? {
         children.isEmpty ? nil : children
     }
+}
+
+struct MGNotificationPreferences: Hashable {
+    var taskCompleted = true
+    var approvalRequired = true
+    var connectionLost = true
+    var scheduledTaskReady = true
 }

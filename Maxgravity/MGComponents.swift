@@ -1,47 +1,53 @@
 import SwiftUI
 import UIKit
 
-struct MGAppBackground: View {
+struct MGBrandMark: View {
+    var size: CGFloat
+
     var body: some View {
-        MGTheme.background
-            .ignoresSafeArea()
+        Image("MaxgravityMarkGradient")
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 }
 
-struct MGLogoMark: View {
+struct MGBrandWordmark: View {
+    var compact: Bool = false
+
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 1.0, green: 0.46, blue: 0.18),
-                            Color(red: 0.95, green: 0.26, blue: 0.46),
-                            Color(red: 0.62, green: 0.21, blue: 0.94)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-            Image(systemName: "sparkles")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(.white.opacity(0.92))
+        if let image = UIImage(named: "MaxgravityWordmark") {
+            Image(uiImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(height: compact ? 22 : 28)
+                .accessibilityLabel("Maxgravity")
+        } else {
+            Text("Maxgravity")
+                .font(compact ? .headline.weight(.semibold) : .title3.weight(.bold))
+                .foregroundStyle(MGTheme.primaryText)
         }
-        .frame(width: 42, height: 42)
-        .accessibilityHidden(true)
     }
 }
 
 struct MGNavigationHeader<Trailing: View>: View {
     let title: String
     let subtitle: String?
-    @ViewBuilder var trailing: Trailing
+    let trailing: Trailing
+
+    init(title: String, subtitle: String?, @ViewBuilder trailing: () -> Trailing) {
+        self.title = title
+        self.subtitle = subtitle
+        self.trailing = trailing()
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
+                MGBrandWordmark(compact: true)
                 Text(title)
-                    .font(.largeTitle.weight(.bold))
+                    .font(.system(size: 30, weight: .bold))
                     .foregroundStyle(MGTheme.primaryText)
                 if let subtitle {
                     Text(subtitle)
@@ -68,10 +74,9 @@ struct MGStatusPill: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(MGTheme.primaryText)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Color.white.opacity(0.05), in: Capsule())
-        .overlay(Capsule().stroke(MGTheme.border, lineWidth: 1))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .mgInteractiveGlass(cornerRadius: 18)
     }
 
     private var color: Color {
@@ -89,7 +94,10 @@ struct MGConnectionPill: View {
     var action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        Button(action: {
+            MGHaptics.selection()
+            action()
+        }) {
             HStack(spacing: 10) {
                 Circle()
                     .fill(status.isOnline ? MGTheme.success : MGTheme.danger)
@@ -98,7 +106,7 @@ struct MGConnectionPill: View {
                     Text(status.computerName)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(MGTheme.primaryText)
-                    Text(status.isOnline ? "Online" : "Offline")
+                    Text("\(status.isOnline ? "Online" : "Offline") • \(status.quality.title)")
                         .font(.caption)
                         .foregroundStyle(MGTheme.secondaryText)
                 }
@@ -106,17 +114,13 @@ struct MGConnectionPill: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(MGTheme.secondaryText)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .frame(minHeight: 44)
         }
-        .buttonStyle(.plain)
-        .background {
-            MGAdaptiveSurface {
-                Color.clear
-            }
-        }
-        .accessibilityLabel("\(status.computerName), \(status.isOnline ? "online" : "offline")")
+        .buttonStyle(MGPressableButtonStyle())
+        .mgInteractiveGlass(cornerRadius: 20)
+        .accessibilityLabel("\(status.computerName), \(status.isOnline ? "online" : "offline"), \(status.quality.title)")
     }
 }
 
@@ -128,83 +132,85 @@ struct MGSpaceRow: View {
     let onNewTask: () -> Void
 
     var body: some View {
-        MGAdaptiveSurface {
-            VStack(alignment: .leading, spacing: 0) {
-                Button(action: onToggle) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "folder")
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: onToggle) {
+                HStack(spacing: 12) {
+                    iconWell(symbol: "square.grid.2x2.fill")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(space.name)
                             .font(.body.weight(.semibold))
                             .foregroundStyle(MGTheme.primaryText)
-                            .frame(width: 24)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(space.name)
-                                .font(.headline)
-                                .foregroundStyle(MGTheme.primaryText)
-                            Text("\(space.chats.count) chats")
-                                .font(.subheadline)
-                                .foregroundStyle(MGTheme.secondaryText)
-                        }
-                        Spacer()
-                        if let statusText = space.statusText {
-                            MGStatusPill(title: statusText, tone: .neutral)
-                        }
-                        Image(systemName: "chevron.right")
-                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        Text("\(space.chats.count) chats")
+                            .font(.subheadline)
                             .foregroundStyle(MGTheme.secondaryText)
                     }
-                    .mgSectionCardPadding()
-                    .frame(minHeight: 56)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .contextMenu {
-                    Button(space.isPinned ? "Unpin" : "Pin") {}
-                    Button("Rename") {}
-                    Button("Collapse all") {}
-                    Button("Manage connection roots") {}
-                }
-
-                if isExpanded {
-                    Divider()
-                        .overlay(MGTheme.border)
-                        .padding(.horizontal, 16)
-                    VStack(spacing: 0) {
-                        ForEach(space.chats) { chat in
-                            MGChatRow(chat: chat) {
-                                onOpenChat(chat)
-                            }
-                            if chat.id != space.chats.last?.id {
-                                Divider()
-                                    .overlay(MGTheme.border)
-                                    .padding(.leading, 52)
-                            }
-                        }
-
-                        if space.chats.isEmpty {
-                            Text("No chats yet")
-                                .font(.subheadline)
-                                .foregroundStyle(MGTheme.secondaryText)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 18)
-                        }
+                    Spacer()
+                    if let statusText = space.statusText {
+                        MGStatusPill(title: statusText, tone: .neutral)
                     }
+                    Image(systemName: "chevron.right")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(MGTheme.secondaryText)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                }
+                .padding(16)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(MGPressableButtonStyle())
+            .contextMenu {
+                Button(space.isPinned ? "Unpin Space" : "Pin Space") {}
+                Button("Rename Space") {}
+                Button("Collapse all") {}
+                Button("Manage workspace root") {}
+            }
 
-                    Button(action: onNewTask) {
-                        HStack(spacing: 10) {
-                            Image(systemName: "plus")
-                            Text("New task")
-                                .fontWeight(.semibold)
-                        }
-                        .foregroundStyle(MGTheme.primaryText)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                    }
-                    .buttonStyle(.plain)
+            if isExpanded {
+                Divider()
+                    .overlay(MGTheme.border)
                     .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, 14)
+
+                VStack(spacing: 0) {
+                    ForEach(space.chats) { chat in
+                        MGChatRow(chat: chat) {
+                            onOpenChat(chat)
+                        }
+                        if chat.id != space.chats.last?.id {
+                            Divider()
+                                .overlay(MGTheme.border)
+                                .padding(.leading, 68)
+                        }
+                    }
                 }
+
+                Button(action: onNewTask) {
+                    HStack(spacing: 12) {
+                        MGBrandMark(size: 18)
+                        Text("New task")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(MGTheme.primaryText)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                }
+                .buttonStyle(MGPressableButtonStyle())
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                .padding(.bottom, 14)
+                .mgInteractiveGlass(cornerRadius: 20)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
             }
         }
+        .mgReadableSurface(cornerRadius: 28)
+    }
+
+    private func iconWell(symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.body.weight(.semibold))
+            .foregroundStyle(MGTheme.primaryText)
+            .frame(width: 40, height: 40)
+            .mgInteractiveGlass(cornerRadius: 16)
     }
 }
 
@@ -215,7 +221,12 @@ struct MGChatRow: View {
     var body: some View {
         Button(action: action) {
             HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
+                Image(systemName: "message.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(MGTheme.secondaryText)
+                    .frame(width: 18)
+
+                VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 8) {
                         Text(chat.title)
                             .font(.body.weight(.medium))
@@ -227,7 +238,7 @@ struct MGChatRow: View {
                                 .foregroundStyle(MGTheme.secondaryText)
                         }
                     }
-                    Text(DateFormatter.mgTime.string(from: chat.lastActivity))
+                    Text(DateFormatter.mgRelative.localizedString(for: chat.lastActivity, relativeTo: .now))
                         .font(.caption)
                         .foregroundStyle(MGTheme.secondaryText)
                 }
@@ -236,33 +247,51 @@ struct MGChatRow: View {
                     MGStatusPill(title: "Running", tone: .good)
                 }
             }
-            .padding(.leading, 52)
+            .padding(.leading, 18)
             .padding(.trailing, 16)
             .padding(.vertical, 14)
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MGPressableButtonStyle())
         .contextMenu {
             Button(chat.isPinned ? "Unpin" : "Pin") {}
             Button("Rename") {}
+            Button("Move to another Space") {}
             Button("Delete local history", role: .destructive) {}
-            Button("Move to Space") {}
         }
     }
 }
 
 struct MGPrimaryActionButton: View {
     let title: String
+    let icon: String?
     let action: () -> Void
 
+    init(title: String, icon: String? = nil, action: @escaping () -> Void) {
+        self.title = title
+        self.icon = icon
+        self.action = action
+    }
+
     var body: some View {
-        Button(title, action: action)
-            .buttonStyle(MGPrimaryButtonStyle())
+        Button(action: {
+            MGHaptics.impact(.light)
+            action()
+        }) {
+            HStack(spacing: 10) {
+                if let icon {
+                    Image(systemName: icon)
+                }
+                Text(title)
+            }
+        }
+        .buttonStyle(MGPrimaryButtonStyle())
     }
 }
 
 struct MGComposerAccessoryBar: View {
+    let selectedModel: String
     var onPlus: () -> Void
     var onSlash: () -> Void
     var onMention: () -> Void
@@ -272,25 +301,27 @@ struct MGComposerAccessoryBar: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            iconButton(symbol: "plus", action: onPlus, label: "Plus menu")
+            iconButton(symbol: "plus", action: onPlus, label: "Attachment menu")
             iconButton(symbol: "slash", action: onSlash, label: "Slash commands")
-            iconButton(symbol: "@", action: onMention, label: "Mention file", isText: true)
-            Spacer(minLength: 8)
+            iconButton(symbol: "@", action: onMention, label: "Mention file", usesText: true)
+            Spacer(minLength: 10)
+
             Button(action: onModel) {
                 HStack(spacing: 8) {
-                    Image(systemName: "sparkles.rectangle.stack")
-                    Text("Model")
-                        .font(.subheadline.weight(.semibold))
+                    Image(systemName: "sparkles.rectangle.stack.fill")
+                    Text(selectedModel)
+                        .lineLimit(1)
                 }
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(MGTheme.primaryText)
                 .padding(.horizontal, 14)
                 .frame(minHeight: 44)
             }
-            .buttonStyle(.plain)
-            .background(MGTheme.surface, in: Capsule())
-            .overlay(Capsule().stroke(MGTheme.border, lineWidth: 1))
+            .buttonStyle(MGPressableButtonStyle())
+            .mgInteractiveGlass(cornerRadius: 18)
 
-            iconButton(symbol: "mic", action: onMicrophone, label: "Microphone")
+            iconButton(symbol: "mic.fill", action: onMicrophone, label: "Microphone")
+
             Button(action: onSend) {
                 Image(systemName: "arrow.up")
                     .font(.body.weight(.bold))
@@ -298,16 +329,16 @@ struct MGComposerAccessoryBar: View {
                     .frame(width: 44, height: 44)
                     .background(Color.white, in: Circle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(MGPressableButtonStyle())
             .accessibilityLabel("Send task")
         }
     }
 
     @ViewBuilder
-    private func iconButton(symbol: String, action: @escaping () -> Void, label: String, isText: Bool = false) -> some View {
+    private func iconButton(symbol: String, action: @escaping () -> Void, label: String, usesText: Bool = false) -> some View {
         Button(action: action) {
             Group {
-                if isText {
+                if usesText {
                     Text(symbol)
                         .font(.body.weight(.semibold))
                 } else {
@@ -315,9 +346,11 @@ struct MGComposerAccessoryBar: View {
                         .font(.body.weight(.semibold))
                 }
             }
+            .foregroundStyle(MGTheme.primaryText)
             .frame(width: 44, height: 44)
         }
-        .buttonStyle(MGSecondaryIconButtonStyle())
+        .buttonStyle(MGPressableButtonStyle())
+        .mgInteractiveGlass(cornerRadius: 18)
         .accessibilityLabel(label)
     }
 }
@@ -335,69 +368,69 @@ struct MGComposer: View {
     let onSend: () -> Void
 
     var body: some View {
-        MGAdaptiveSurface {
-            VStack(alignment: .leading, spacing: 14) {
-                if !mentionedFiles.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(mentionedFiles, id: \.self) { file in
-                                HStack(spacing: 6) {
-                                    Text(file)
-                                        .lineLimit(1)
-                                        .font(.caption.weight(.medium))
-                                    Button(action: { onRemoveFile(file) }) {
-                                        Image(systemName: "xmark")
-                                            .font(.caption2.weight(.bold))
-                                    }
-                                    .buttonStyle(.plain)
+        VStack(alignment: .leading, spacing: 14) {
+            if !mentionedFiles.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(mentionedFiles, id: \.self) { file in
+                            HStack(spacing: 6) {
+                                Text(file)
+                                    .lineLimit(1)
+                                    .font(.caption.weight(.medium))
+                                Button(action: { onRemoveFile(file) }) {
+                                    Image(systemName: "xmark")
+                                        .font(.caption2.weight(.bold))
                                 }
-                                .foregroundStyle(MGTheme.primaryText)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 8)
-                                .background(Color.white.opacity(0.05), in: Capsule())
-                                .overlay(Capsule().stroke(MGTheme.border, lineWidth: 1))
+                                .buttonStyle(.plain)
                             }
+                            .foregroundStyle(MGTheme.primaryText)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .mgInteractiveGlass(cornerRadius: 16)
                         }
                     }
                 }
-
-                ZStack(alignment: .topLeading) {
-                    if text.isEmpty {
-                        Text("Describe what you want Antigravity to build, change, review, or investigate...")
-                            .font(.body)
-                            .foregroundStyle(MGTheme.tertiaryText)
-                            .padding(.top, 8)
-                            .padding(.horizontal, 4)
-                    }
-                    TextEditor(text: $text)
-                        .scrollContentBackground(.hidden)
-                        .font(.body)
-                        .foregroundStyle(MGTheme.primaryText)
-                        .frame(minHeight: 170)
-                        .tint(.white)
-                }
-
-                HStack {
-                    Text(selectedModel)
-                        .font(.caption)
-                        .foregroundStyle(MGTheme.secondaryText)
-                    Spacer()
-                    Text("\(text.count) chars")
-                        .font(.caption)
-                        .foregroundStyle(MGTheme.tertiaryText)
-                }
-
-                MGComposerAccessoryBar(
-                    onPlus: onPlus,
-                    onSlash: onSlash,
-                    onMention: onMention,
-                    onModel: onModel,
-                    onMicrophone: onMicrophone,
-                    onSend: onSend
-                )
             }
-            .mgSectionCardPadding()
+
+            ZStack(alignment: .topLeading) {
+                if text.isEmpty {
+                    Text("Describe what you want Maxgravity to build, change, review, or investigate…")
+                        .font(.body)
+                        .foregroundStyle(MGTheme.tertiaryText)
+                        .padding(.top, 8)
+                        .padding(.horizontal, 4)
+                }
+
+                TextEditor(text: $text)
+                    .scrollContentBackground(.hidden)
+                    .font(.body)
+                    .foregroundStyle(MGTheme.primaryText)
+                    .frame(minHeight: 188)
+                    .tint(.white)
+            }
+
+            HStack {
+                Text("Focused task composer")
+                    .font(.caption)
+                    .foregroundStyle(MGTheme.secondaryText)
+                Spacer()
+                Text("\(text.count) chars")
+                    .font(.caption)
+                    .foregroundStyle(MGTheme.tertiaryText)
+            }
+
+            MGComposerAccessoryBar(
+                selectedModel: selectedModel,
+                onPlus: onPlus,
+                onSlash: onSlash,
+                onMention: onMention,
+                onModel: onModel,
+                onMicrophone: onMicrophone,
+                onSend: onSend
+            )
         }
+        .padding(16)
+        .mgReadableSurface(cornerRadius: 30)
     }
 }
 
@@ -438,11 +471,7 @@ struct MGAgentActivityTimeline: View {
             }
         }
         .padding(14)
-        .background(MGTheme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(MGTheme.border, lineWidth: 1)
-        )
+        .mgInteractiveGlass(cornerRadius: 22)
     }
 
     private func iconColor(for event: MGActivityEvent) -> Color {
@@ -466,8 +495,9 @@ struct MGThreeDotsPulse: View {
                     .fill(MGTheme.secondaryText)
                     .frame(width: 6, height: 6)
                     .opacity(phase ? 0.95 : 0.35)
+                    .offset(y: phase ? -1 : 1)
                     .animation(
-                        reduceMotion ? nil : .easeInOut(duration: 0.8).repeatForever().delay(Double(index) * 0.12),
+                        reduceMotion ? nil : .easeInOut(duration: 0.82).repeatForever().delay(Double(index) * 0.12),
                         value: phase
                     )
             }
@@ -502,12 +532,8 @@ struct MGArtifactRow: View {
             .padding(12)
             .frame(minHeight: 44)
         }
-        .buttonStyle(.plain)
-        .background(MGTheme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(MGTheme.border, lineWidth: 1)
-        )
+        .buttonStyle(MGPressableButtonStyle())
+        .mgInteractiveGlass(cornerRadius: 20)
     }
 
     private var symbol: String {
@@ -546,11 +572,7 @@ struct MGDiffSummary: View {
             Spacer()
         }
         .padding(12)
-        .background(MGTheme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(MGTheme.border, lineWidth: 1)
-        )
+        .mgReadableSurface(cornerRadius: 20)
     }
 }
 
@@ -562,7 +584,7 @@ struct MGApprovalPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            MGStatusPill(title: "Waiting for approval", tone: .warning)
+            MGStatusPill(title: "Approval required", tone: .warning)
             Text(request.title)
                 .font(.headline)
                 .foregroundStyle(MGTheme.primaryText)
@@ -585,21 +607,17 @@ struct MGApprovalPanel: View {
                 Button("Approve", action: onApprove)
                     .buttonStyle(MGPrimaryButtonStyle())
                 Button("Reject", action: onReject)
-                    .buttonStyle(.bordered)
-                    .tint(MGTheme.warning)
+                    .buttonStyle(MGPressableButtonStyle(foreground: MGTheme.warning))
                     .frame(minHeight: 52)
+                    .mgInteractiveGlass(cornerRadius: 20)
                 Button("Steer", action: onSteer)
-                    .buttonStyle(.bordered)
-                    .tint(.white)
+                    .buttonStyle(MGPressableButtonStyle())
                     .frame(minHeight: 52)
+                    .mgInteractiveGlass(cornerRadius: 20)
             }
         }
-        .mgSectionCardPadding()
-        .background(MGTheme.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(MGTheme.warning.opacity(0.45), lineWidth: 1)
-        )
+        .padding(18)
+        .mgReadableSurface(cornerRadius: 28)
     }
 }
 
@@ -608,7 +626,10 @@ struct MGCompletionEmbed: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            MGStatusPill(title: "Task completed", tone: .good)
+            HStack(spacing: 12) {
+                MGBrandMark(size: 24)
+                MGStatusPill(title: "Task completed", tone: .good)
+            }
             Text(summary.summary)
                 .font(.subheadline)
                 .foregroundStyle(MGTheme.primaryText)
@@ -647,12 +668,8 @@ struct MGCompletionEmbed: View {
             }
             .buttonStyle(MGPrimaryButtonStyle())
         }
-        .mgSectionCardPadding()
-        .background(MGTheme.success.opacity(0.12), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(MGTheme.success.opacity(0.4), lineWidth: 1)
-        )
+        .padding(18)
+        .mgInteractiveGlass(cornerRadius: 30)
     }
 
     private func metricRow(_ title: String, value: String) -> some View {
@@ -688,7 +705,12 @@ struct MGTaskContextSheet: View {
                             appModel.updateDraftPermission(mode)
                         } label: {
                             HStack {
-                                Text(mode.title)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(mode.title)
+                                    Text(mode.summary)
+                                        .font(.caption)
+                                        .foregroundStyle(MGTheme.secondaryText)
+                                }
                                 Spacer()
                                 if appModel.draftContext.permissionMode == mode {
                                     Image(systemName: "checkmark")
@@ -737,7 +759,7 @@ struct MGRemoteFolderPicker: View {
                     }
                 } label: {
                     HStack {
-                        Image(systemName: node.isDirectory ? "folder" : "doc.text")
+                        Image(systemName: node.isDirectory ? "folder.fill" : "doc.text")
                         VStack(alignment: .leading, spacing: 4) {
                             Text(node.name)
                             Text(node.path)
@@ -773,9 +795,7 @@ struct MGModelPicker: View {
                             HStack(spacing: 8) {
                                 Text(model.title)
                                     .foregroundStyle(MGTheme.primaryText)
-                                if model.isRecommended {
-                                    MGStatusPill(title: "Recommended", tone: .good)
-                                }
+                                MGStatusPill(title: model.availability.title, tone: model.availability.tone)
                             }
                             if let subtitle = model.subtitle {
                                 Text(subtitle)
@@ -810,12 +830,11 @@ struct MGSettingsGroup<Content: View>: View {
             Text(title)
                 .font(.headline)
                 .foregroundStyle(MGTheme.primaryText)
-            MGAdaptiveSurface {
-                VStack(spacing: 0) {
-                    content
-                }
-                .mgSectionCardPadding()
+            VStack(spacing: 0) {
+                content
             }
+            .padding(14)
+            .mgReadableSurface(cornerRadius: 26)
         }
     }
 }

@@ -1,5 +1,7 @@
+import ActivityKit
 import Foundation
 import Observation
+import UserNotifications
 
 protocol MGBridgeClient {
     func fetchConnectionStatus() async throws -> MGComputerStatus?
@@ -8,6 +10,8 @@ protocol MGBridgeClient {
     func listSchedules() async throws -> [MGScheduledTask]
     func availableModels() async throws -> [MGModelOption]
     func approvedRoots() async throws -> [MGRemoteFileNode]
+    func capabilityMatrix() async throws -> [MGBridgeCapability]
+    func preparePairingSession() async throws -> MGPairingQRCodePayload
 }
 
 protocol MGSpacesRepository {
@@ -48,6 +52,8 @@ struct MGMockBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository
     func listSchedules() async throws -> [MGScheduledTask] { MGFixtures.schedules }
     func availableModels() async throws -> [MGModelOption] { MGFixtures.models }
     func approvedRoots() async throws -> [MGRemoteFileNode] { MGFixtures.remoteRoots }
+    func capabilityMatrix() async throws -> [MGBridgeCapability] { MGFixtures.capabilities }
+    func preparePairingSession() async throws -> MGPairingQRCodePayload { MGFixtures.pairingPayload }
     func spaces() async throws -> [MGSpaceSummary] { MGFixtures.spaces }
     func models() async throws -> [MGModelOption] { MGFixtures.models }
     func activityBuckets() async throws -> [MGActivityBucket] { MGFixtures.activityBuckets }
@@ -55,22 +61,78 @@ struct MGMockBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository
     func roots() async throws -> [MGRemoteFileNode] { MGFixtures.remoteRoots }
 }
 
+@available(iOS 16.1, *)
+struct MGTaskActivityAttributes: ActivityAttributes {
+    struct ContentState: Codable, Hashable {
+        var stage: String
+        var status: String
+        var approvalRequired: Bool
+    }
+
+    var taskTitle: String
+    var computerName: String
+}
+
+@MainActor
+final class MGTaskLiveActivityController {
+    private var activity: Activity<MGTaskActivityAttributes>?
+    private(set) var diagnostics = "Idle"
+
+    func startIfPossible(taskTitle: String, computerName: String, stage: String) {
+        if #available(iOS 16.1, *) {
+            guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+                diagnostics = "Live Activities disabled on device"
+                return
+            }
+
+            do {
+                activity = try Activity.request(
+                    attributes: MGTaskActivityAttributes(taskTitle: taskTitle, computerName: computerName),
+                    contentState: .init(stage: stage, status: "Running", approvalRequired: false),
+                    pushType: nil
+                )
+                diagnostics = "Started in foreground only; background bridge push updates still require APNs setup."
+            } catch {
+                diagnostics = "Live Activity request failed: \(error.localizedDescription)"
+            }
+        } else {
+            diagnostics = "ActivityKit requires iOS 16.1+"
+        }
+    }
+
+    func update(stage: String, status: String, approvalRequired: Bool) {
+        guard #available(iOS 16.1, *), let activity else { return }
+        Task {
+            await activity.update(using: .init(stage: stage, status: status, approvalRequired: approvalRequired))
+        }
+    }
+
+    func end() {
+        guard #available(iOS 16.1, *), let activity else { return }
+        Task { await activity.end(dismissalPolicy: .default) }
+    }
+}
+
 @MainActor
 @Observable
 final class MGAppModel {
-    var selectedTab: AppTab = .spaces
-    var spacesPath: [Route] = []
-    var activityPath: [Route] = []
-    var settingsPath: [Route] = []
-    var presentedSheet: SheetDestination?
+    var path: [Route] = []
+    var presentedSheet: MGSheetDestination?
+    var presentedFullScreen: MGFullScreenDestination?
+    var presentedPanel: MGPanelDestination?
 
     var connection: MGComputerStatus?
-    var trustedComputers: [MGComputerStatus] = []
+    var trustedDevices: [MGTrustedDevice] = MGFixtures.trustedDevices
     var spaces: [MGSpaceSummary] = MGFixtures.spaces
     var activityBuckets: [MGActivityBucket] = MGFixtures.activityBuckets
     var schedules: [MGScheduledTask] = MGFixtures.schedules
     var models: [MGModelOption] = MGFixtures.models
     var remoteRoots: [MGRemoteFileNode] = MGFixtures.remoteRoots
+    var capabilities: [MGBridgeCapability] = MGFixtures.capabilities
+    var pairingPayload: MGPairingQRCodePayload = MGFixtures.pairingPayload
+    var notificationPreferences = MGNotificationPreferences()
+    var notificationsAuthorized = false
+    var liveActivityDiagnostics = "Not started"
 
     var expandedSpaceIDs: Set<String> = [MGFixtures.spaces.first?.id ?? ""]
 
@@ -84,24 +146,45 @@ final class MGAppModel {
         mentionedFiles: ["src/components/BottomBar.tsx", "README.md"]
     )
 
-    private var settingsStore: MGSettingsStore = MGInMemorySettingsStore()
+    private let bridge: MGBridgeClient
+    private var settingsStore: MGSettingsStore
+    private let liveActivityController = MGTaskLiveActivityController()
+
+    init(
+        bridge: MGBridgeClient = MGMockBridgeClient(),
+        settingsStore: MGSettingsStore = MGInMemorySettingsStore()
+    ) {
+        self.bridge = bridge
+        self.settingsStore = settingsStore
+    }
 
     var hasConnectedComputer: Bool { connection != nil }
 
+    func bootstrap() async {
+        do {
+            connection = try await bridge.fetchConnectionStatus()
+            spaces = try await bridge.listSpaces()
+            activityBuckets = try await bridge.listActivity()
+            schedules = try await bridge.listSchedules()
+            models = try await bridge.availableModels()
+            remoteRoots = try await bridge.approvedRoots()
+            capabilities = try await bridge.capabilityMatrix()
+            pairingPayload = try await bridge.preparePairingSession()
+        } catch {
+            liveActivityDiagnostics = "Bridge bootstrap failed: \(error.localizedDescription)"
+        }
+    }
+
     func connectMockComputer() {
         connection = MGFixtures.connectedComputer
-        if !trustedComputers.contains(MGFixtures.connectedComputer) {
-            trustedComputers.append(MGFixtures.connectedComputer)
-        }
-        selectedTab = .spaces
     }
 
     func disconnectCurrentComputer() {
         connection = nil
-        spacesPath = []
-        activityPath = []
-        settingsPath = []
+        path = []
         presentedSheet = nil
+        presentedFullScreen = nil
+        presentedPanel = nil
     }
 
     func toggleSpace(_ spaceID: String) {
@@ -116,16 +199,20 @@ final class MGAppModel {
         expandedSpaceIDs.removeAll()
     }
 
-    func push(_ route: Route, on tab: AppTab = .spaces) {
-        selectedTab = tab
-        switch tab {
-        case .spaces:
-            spacesPath.append(route)
-        case .activity:
-            activityPath.append(route)
-        case .settings:
-            settingsPath.append(route)
-        }
+    func openChat(_ chatID: String) {
+        path.append(.chat(chatID: chatID))
+    }
+
+    func openNewTask(spaceID: String) {
+        presentedFullScreen = .newTask(spaceID: spaceID)
+    }
+
+    func presentPanel(_ panel: MGPanelDestination) {
+        presentedPanel = panel
+    }
+
+    func dismissPanel() {
+        presentedPanel = nil
     }
 
     func chat(with id: String) -> MGChatSummary? {
@@ -158,11 +245,12 @@ final class MGAppModel {
             id: UUID().uuidString,
             title: title,
             stateText: "Planning changes",
+            stateTone: .neutral,
             messages: [
                 MGThreadMessage(
                     id: UUID().uuidString,
                     role: .user,
-                    body: draftPrompt.isEmpty ? "Describe what you want Antigravity to build, change, review, or investigate..." : draftPrompt,
+                    body: draftPrompt.isEmpty ? "Describe what you want Maxgravity to build, change, review, or investigate…" : draftPrompt,
                     timestamp: now,
                     delivered: true,
                     attachments: draftContext.mentionedFiles.map {
@@ -172,8 +260,8 @@ final class MGAppModel {
                 MGThreadMessage(
                     id: UUID().uuidString,
                     role: .assistant,
-                    body: "Planning the task using the selected workspace, permission mode, and model. Live bridge integration will replace this mock thread state.",
-                    timestamp: now.addingTimeInterval(18),
+                    body: "Planning the task using the selected workspace, permission mode, and model. Live bridge execution remains partial until the desktop QR-paired transport is active.",
+                    timestamp: now.addingTimeInterval(8),
                     delivered: true,
                     attachments: [
                         MGArtifactSummary(id: UUID().uuidString, kind: .command, title: draftContext.selectedModel.title, detail: "Selected model"),
@@ -192,8 +280,8 @@ final class MGAppModel {
                 ),
                 MGActivityEvent(
                     id: UUID().uuidString,
-                    title: "Waiting for bridge",
-                    detail: "Ready for the desktop bridge to continue the task.",
+                    title: "Awaiting desktop bridge",
+                    detail: "Bridge transport is prepared but still using partial local scaffolding.",
                     duration: "Live",
                     tone: .warning,
                     isComplete: false
@@ -218,6 +306,12 @@ final class MGAppModel {
         spaces[spaceIndex].chats.insert(chat, at: 0)
         expandedSpaceIDs.insert(spaceID)
         draftPrompt = ""
+        presentedFullScreen = nil
+        openChat(chat.id)
+        if let connection {
+            liveActivityController.startIfPossible(taskTitle: title, computerName: connection.computerName, stage: thread.stateText)
+            liveActivityDiagnostics = liveActivityController.diagnostics
+        }
         return chat
     }
 
@@ -231,15 +325,8 @@ final class MGAppModel {
         settingsStore.defaultPermissionMode = mode
     }
 
-    func togglePlanMode() {
-        draftContext.planMode.toggle()
-        settingsStore.defaultPlanMode = draftContext.planMode
-    }
-
     func addMentionedFile(_ path: String) {
-        guard !draftContext.mentionedFiles.contains(path) else {
-            return
-        }
+        guard !draftContext.mentionedFiles.contains(path) else { return }
         draftContext.mentionedFiles.append(path)
     }
 
@@ -248,9 +335,7 @@ final class MGAppModel {
     }
 
     func steerApproval(requestID: String, guidance: String) {
-        guard !guidance.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return
-        }
+        guard !guidance.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
 
         for spaceIndex in spaces.indices {
             for chatIndex in spaces[spaceIndex].chats.indices where spaces[spaceIndex].chats[chatIndex].thread.approval?.id == requestID {
@@ -268,16 +353,31 @@ final class MGAppModel {
             }
         }
     }
+
+    func requestNotificationAuthorization() async {
+        do {
+            notificationsAuthorized = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound])
+        } catch {
+            notificationsAuthorized = false
+        }
+    }
 }
 
 enum MGFixtures {
     static let models: [MGModelOption] = [
-        MGModelOption(id: "auto", title: "Auto", subtitle: "Recommended for most tasks", isRecommended: true),
-        MGModelOption(id: "gpt-4o", title: "GPT-4o", subtitle: "Fast multimodal execution", isRecommended: false),
-        MGModelOption(id: "gpt-4.1", title: "GPT-4.1", subtitle: "Balanced reasoning", isRecommended: false),
-        MGModelOption(id: "gpt-5-codex", title: "GPT-5 Codex", subtitle: "Code-first reasoning", isRecommended: false),
-        MGModelOption(id: "gpt-5-codex-high", title: "GPT-5 Codex High", subtitle: "Highest reasoning budget", isRecommended: false)
+        MGModelOption(id: "auto", title: "Auto", subtitle: "Recommended for most tasks", isRecommended: true, availability: .live),
+        MGModelOption(id: "gpt-4o", title: "GPT-4o", subtitle: "Fast multimodal execution", isRecommended: false, availability: .partial),
+        MGModelOption(id: "gpt-4.1", title: "GPT-4.1", subtitle: "Balanced reasoning", isRecommended: false, availability: .partial),
+        MGModelOption(id: "gpt-5-codex", title: "GPT-5 Codex", subtitle: "Code-first reasoning", isRecommended: false, availability: .mock),
+        MGModelOption(id: "gpt-5-codex-high", title: "GPT-5 Codex High", subtitle: "Highest reasoning budget", isRecommended: false, availability: .mock)
     ]
+
+    static let pairingPayload = MGPairingQRCodePayload(
+        address: "wss://192.168.1.18:59443",
+        token: "MG-7K4Q-98N1",
+        desktopFingerprint: "3B:A7:E1:44:3F:92",
+        expiresAt: .now.addingTimeInterval(300)
+    )
 
     static let connectedComputer = MGComputerStatus(
         id: "desktop-1",
@@ -285,14 +385,32 @@ enum MGFixtures {
         isOnline: true,
         quality: .excellent,
         lastSync: .now.addingTimeInterval(-18),
-        encryption: "End-to-end paired",
-        supportedPermissionModes: [.sandbox, .askWhenNeeded, .sensitiveAutoReview]
+        encryption: "Pinned local transport",
+        supportedPermissionModes: [.sandbox, .askWhenNeeded, .sensitiveAutoReview],
+        connectionAddress: pairingPayload.address,
+        pairing: .partial,
+        liveBridge: .partial
     )
 
+    static let capabilities: [MGBridgeCapability] = [
+        MGBridgeCapability(id: "cap-health", title: "Connection health", state: .live, detail: "Computer identity and online quality are sourced from the bridge shell."),
+        MGBridgeCapability(id: "cap-spaces", title: "Spaces and chats", state: .mock, detail: "Still fixture-backed in mobile while the bridge contract settles."),
+        MGBridgeCapability(id: "cap-launch", title: "Task launch", state: .partial, detail: "Mobile draft flow exists; desktop execution handoff is not end-to-end yet."),
+        MGBridgeCapability(id: "cap-events", title: "Live task events", state: .partial, detail: "Safe activity states are modeled, but live streaming is not connected."),
+        MGBridgeCapability(id: "cap-artifacts", title: "Files, diffs, commands", state: .mock, detail: "Artifact rendering is implemented with realistic payload shapes."),
+        MGBridgeCapability(id: "cap-workspace", title: "Workspace roots", state: .partial, detail: "Remote approved-root browsing is scaffolded; bridge enforcement is pending."),
+        MGBridgeCapability(id: "cap-pairing", title: "QR pairing", state: .partial, detail: "Signed payload model exists; camera scan and desktop trust confirmation are pending.")
+    ]
+
+    static let trustedDevices: [MGTrustedDevice] = [
+        MGTrustedDevice(id: "ios-1", name: "Kuroi iPhone", addedAt: .now.addingTimeInterval(-86_400), fingerprint: "A1:6F:9B:42")
+    ]
+
     static let thread = MGTaskThread(
-        id: "thread-antigravity-bottom-bar",
+        id: "thread-maxgravity-bottom-bar",
         title: "Implement bottom bar",
         stateText: "Waiting for approval",
+        stateTone: .warning,
         messages: [
             MGThreadMessage(
                 id: "m1",
@@ -312,7 +430,7 @@ enum MGFixtures {
                 delivered: true,
                 attachments: [
                     MGArtifactSummary(id: "a2", kind: .diff, title: "BottomBar.tsx  +48  -23", detail: "Diff summary"),
-                    MGArtifactSummary(id: "a3", kind: .command, title: "npm run test", detail: "Passed | 2.3s")
+                    MGArtifactSummary(id: "a3", kind: .command, title: "npm run test", detail: "Passed · 2.3s")
                 ]
             )
         ],
@@ -356,8 +474,8 @@ enum MGFixtures {
 
     static let spaces: [MGSpaceSummary] = [
         MGSpaceSummary(
-            id: "space-antigravity-app",
-            name: "Antigravity App",
+            id: "space-maxgravity-app",
+            name: "Maxgravity App",
             chats: [
                 MGChatSummary(id: thread.id, title: thread.title, lastActivity: .now.addingTimeInterval(-3200), isRunning: true, isPinned: true, thread: thread),
                 MGChatSummary(id: "chat-auth", title: "Fix auth flow bug", lastActivity: .now.addingTimeInterval(-8600), isRunning: false, isPinned: false, thread: thread),
@@ -408,7 +526,7 @@ enum MGFixtures {
             id: "running",
             title: "Running now",
             items: [
-                MGActivityListItem(id: "run1", title: "Implement bottom bar", detail: "Antigravity App", tone: .good, route: .chat(chatID: thread.id)),
+                MGActivityListItem(id: "run1", title: "Implement bottom bar", detail: "Maxgravity App", tone: .good, route: .chat(chatID: thread.id)),
                 MGActivityListItem(id: "run2", title: "Stabilize sync worker", detail: "Max Clouds", tone: .neutral, route: .chat(chatID: "chat-max-clouds"))
             ]
         ),
@@ -429,7 +547,7 @@ enum MGFixtures {
     ]
 
     static let schedules: [MGScheduledTask] = [
-        MGScheduledTask(id: "sch-1", title: "Run nightly tests", spaceName: "Antigravity App", nextRun: .now.addingTimeInterval(36_000), frequency: "Every night", isEnabled: true, permissionMode: .sandbox, model: "Auto"),
+        MGScheduledTask(id: "sch-1", title: "Run nightly tests", spaceName: "Maxgravity App", nextRun: .now.addingTimeInterval(36_000), frequency: "Every night", isEnabled: true, permissionMode: .sandbox, model: "Auto"),
         MGScheduledTask(id: "sch-2", title: "Summarize open approvals", spaceName: "Personal OS", nextRun: .now.addingTimeInterval(7200), frequency: "Weekdays", isEnabled: false, permissionMode: .askWhenNeeded, model: "GPT-4.1")
     ]
 

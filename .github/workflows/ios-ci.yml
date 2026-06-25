@@ -26,7 +26,7 @@ jobs:
         run: >
           xcodebuild
           -project Maxgravity.xcodeproj
-          -target Maxgravity
+          -scheme Maxgravity
           -configuration Release
           -destination 'generic/platform=iOS Simulator'
           -sdk iphonesimulator
@@ -38,7 +38,7 @@ jobs:
         run: >
           xcodebuild
           -project Maxgravity.xcodeproj
-          -target Maxgravity
+          -scheme Maxgravity
           -configuration Release
           -sdk iphoneos
           -derivedDataPath build/DerivedData

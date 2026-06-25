@@ -28,6 +28,10 @@ struct MGRootView: View {
         .fullScreenCover(item: Binding(get: { appModel.presentedFullScreen }, set: { appModel.presentedFullScreen = $0 })) { destination in
             fullScreen(for: destination)
         }
+        .background {
+            floatingPanelPresenter
+        }
+#if !canImport(FloatingPanel)
         .sheet(item: Binding(get: { appModel.presentedPanel }, set: { appModel.presentedPanel = $0 })) { panel in
             panelView(for: panel)
                 .presentationDragIndicator(.visible)
@@ -35,6 +39,7 @@ struct MGRootView: View {
                 .presentationBackground(.clear)
                 .presentationDetents([.fraction(0.42), .large])
         }
+#endif
     }
 
     @ViewBuilder
@@ -97,6 +102,25 @@ struct MGRootView: View {
         }
     }
 
+    @ViewBuilder
+    private var floatingPanelPresenter: some View {
+        if let panel = appModel.presentedPanel {
+            MGFloatingPanelPresenter(
+                isPresented: Binding(
+                    get: { appModel.presentedPanel != nil },
+                    set: { isPresented in
+                        if !isPresented {
+                            appModel.presentedPanel = nil
+                        }
+                    }
+                )
+            ) {
+                panelView(for: panel)
+            }
+            .frame(width: 0, height: 0)
+        }
+    }
+
     private func sheetDetents(for destination: MGSheetDestination) -> Set<PresentationDetent> {
         switch destination {
         case .connectionInfo, .approvalSteering:
@@ -118,11 +142,11 @@ struct MGFirstLaunchView: View {
                 MGBrandMark(size: 68)
                 MGBrandWordmark()
 
-                Text("Connect Maxgravity on your computer")
+                Text("Connect your computer to continue")
                     .font(.system(size: 34, weight: .bold))
                     .foregroundStyle(MGTheme.primaryText)
 
-                Text("Your connected Windows computer must stay online for live sessions and local bridge updates.")
+                Text("Your computer must stay online for live tasks.")
                     .font(.body)
                     .foregroundStyle(MGTheme.secondaryText)
             }
@@ -151,8 +175,8 @@ struct MGFirstLaunchView: View {
 
             VStack(spacing: 14) {
                 MGPrimaryActionButton(title: "Scan QR code", icon: "qrcode.viewfinder") {
-                    appModel.connectMockComputer()
-                    MGHaptics.success()
+                    appModel.presentedSheet = .pairingCode
+                    MGHaptics.selection()
                 }
 
                 Button("Enter pairing code") {
@@ -165,7 +189,7 @@ struct MGFirstLaunchView: View {
                 .mgInteractiveGlass(cornerRadius: 22)
             }
 
-            Text("Current status: QR payload and trust metadata are modeled. Camera scanning and desktop trust confirmation are still partial.")
+            Text("Current status: QR payload, bridge trust, and one-time token rules are implemented in the bridge. Camera scanning, Keychain storage, and desktop confirmation remain partial.")
                 .font(.footnote)
                 .foregroundStyle(MGTheme.tertiaryText)
                 .padding(.bottom, 24)
@@ -1100,7 +1124,7 @@ struct MGScheduleTaskSheet: View {
                     ForEach(appModel.schedules) { item in
                         VStack(alignment: .leading, spacing: 6) {
                             Text(item.title)
-                            Text("\(DateFormatter.mgSchedule.string(from: item.nextRun)) · \(item.frequency) · \(item.spaceName)")
+                            Text("\(DateFormatter.mgSchedule.string(from: item.nextRun)) - \(item.frequency) - \(item.spaceName)")
                                 .font(.caption)
                                 .foregroundStyle(MGTheme.secondaryText)
                             Text(item.isEnabled ? "Enabled" : "Paused")
@@ -1127,9 +1151,9 @@ struct MGScheduleTaskSheet: View {
 }
 
 struct MGPairingCodeSheet: View {
-    @Environment(MGAppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
     @State private var pairingCode = "MG-8491"
+    @State private var statusMessage = "Manual code entry is scaffolded. Complete trust confirmation requires the running Windows bridge."
 
     var body: some View {
         NavigationStack {
@@ -1145,10 +1169,21 @@ struct MGPairingCodeSheet: View {
                     .textInputAutocapitalization(.characters)
                     .padding(14)
                     .mgReadableSurface(cornerRadius: 18)
-                MGPrimaryActionButton(title: "Pair and connect") {
-                    appModel.connectMockComputer()
+                Text(statusMessage)
+                    .font(.footnote)
+                    .foregroundStyle(MGTheme.warning)
+                MGPrimaryActionButton(title: "Check pairing code") {
+                    statusMessage = "Partial: bridge pairing endpoints are implemented, but this iOS build still needs camera scan, Keychain storage, and desktop trust confirmation before it can connect."
+                    MGHaptics.warning()
+                }
+                Button("Close") {
                     dismiss()
                 }
+                .font(.body.weight(.semibold))
+                .foregroundStyle(MGTheme.primaryText)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .buttonStyle(MGPressableButtonStyle())
+                .mgInteractiveGlass(cornerRadius: 22)
                 Spacer()
             }
             .padding(20)

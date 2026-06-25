@@ -108,3 +108,17 @@ If Antigravity does not support a requested remote control action through offici
 - desktop-required notice
 
 The app must not invent unsupported controls.
+
+## Implemented endpoints
+
+- `GET /v1/connection/health`
+- `POST /v1/connection/pairing-sessions`
+- `POST /v1/connection/trust`
+- `GET /v1/connection/trusted-devices`
+- `POST /v1/connection/trusted-devices/:deviceId/revoke`
+- `GET /v1/capabilities`
+- `GET /v1/workspace/roots`
+- `GET /v1/workspace/browse`
+- `GET /v1/tasks/:taskId/events` as authenticated WebSocket
+
+Workspace and trusted-device management endpoints require trusted-device credentials.

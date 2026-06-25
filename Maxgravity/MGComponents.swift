@@ -1,6 +1,10 @@
 import SwiftUI
 import UIKit
 
+#if canImport(FloatingPanel)
+import FloatingPanel
+#endif
+
 struct MGBrandMark: View {
     var size: CGFloat
 
@@ -838,3 +842,143 @@ struct MGSettingsGroup<Content: View>: View {
         }
     }
 }
+
+struct MGGlassSurface<Content: View>: View {
+    var cornerRadius: CGFloat = 24
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        content
+            .mgInteractiveGlass(cornerRadius: cornerRadius)
+    }
+}
+
+struct MGGlassButton<Label: View>: View {
+    var action: () -> Void
+    @ViewBuilder var label: Label
+
+    var body: some View {
+        Button(action: action) {
+            label
+                .frame(minHeight: 44)
+        }
+        .buttonStyle(MGPressableButtonStyle())
+        .mgInteractiveGlass(cornerRadius: 20)
+    }
+}
+
+struct MGGlassIconButton: View {
+    let symbol: String
+    let label: String
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.body.weight(.semibold))
+                .frame(width: 44, height: 44)
+        }
+        .buttonStyle(MGSecondaryIconButtonStyle())
+        .accessibilityLabel(label)
+    }
+}
+
+typealias MGGlassComposer = MGComposer
+typealias MGGlassPill = MGStatusPill
+typealias MGGlassAttachmentMenu = MGPlusMenuOverlay
+typealias MGGlassCompletionEmbed = MGCompletionEmbed
+
+struct MGGlassPanel<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        MGGlassSurface(cornerRadius: 30) {
+            content
+        }
+    }
+}
+
+struct MGGlassListGroup<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        MGSettingsGroup(title: title) {
+            content
+        }
+    }
+}
+
+#if canImport(FloatingPanel)
+struct MGFloatingPanelPresenter<PanelContent: View>: UIViewControllerRepresentable {
+    @Binding var isPresented: Bool
+    let panelContent: PanelContent
+
+    init(isPresented: Binding<Bool>, @ViewBuilder content: () -> PanelContent) {
+        self._isPresented = isPresented
+        self.panelContent = content()
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(isPresented: $isPresented)
+    }
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        let controller = UIViewController()
+        controller.view.backgroundColor = .clear
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
+        if isPresented {
+            if let hosting = context.coordinator.panel?.contentViewController as? UIHostingController<PanelContent> {
+                hosting.rootView = panelContent
+                return
+            }
+
+            let panel = FloatingPanelController()
+            panel.isRemovalInteractionEnabled = true
+            panel.surfaceView.appearance.cornerRadius = 34
+            panel.surfaceView.appearance.backgroundColor = UIColor.black.withAlphaComponent(0.82)
+            panel.surfaceView.grabberHandle.isHidden = false
+            let hosting = UIHostingController(rootView: panelContent)
+            hosting.view.backgroundColor = .clear
+            panel.set(contentViewController: hosting)
+            panel.presentationController?.delegate = context.coordinator
+            context.coordinator.panel = panel
+            uiViewController.present(panel, animated: true)
+        } else if let panel = context.coordinator.panel {
+            panel.dismiss(animated: true)
+            context.coordinator.panel = nil
+        }
+    }
+
+    final class Coordinator: NSObject, UIAdaptivePresentationControllerDelegate {
+        var panel: FloatingPanelController?
+        private var isPresented: Binding<Bool>
+
+        init(isPresented: Binding<Bool>) {
+            self.isPresented = isPresented
+        }
+
+        func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+            panel = nil
+            isPresented.wrappedValue = false
+        }
+    }
+}
+#else
+struct MGFloatingPanelPresenter<PanelContent: View>: View {
+    @Binding var isPresented: Bool
+    let panelContent: PanelContent
+
+    init(isPresented: Binding<Bool>, @ViewBuilder content: () -> PanelContent) {
+        self._isPresented = isPresented
+        self.panelContent = content()
+    }
+
+    var body: some View {
+        EmptyView()
+    }
+}
+#endif

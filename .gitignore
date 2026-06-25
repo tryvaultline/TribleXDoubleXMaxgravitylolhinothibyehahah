@@ -26,6 +26,12 @@ Package.resolved
 *.ipa
 *.dSYM.zip
 *.dSYM
+outputs/
 
 # Local scratch
 work/
+
+# Node bridge
+bridge/node_modules/
+bridge/dist/
+bridge/.local/

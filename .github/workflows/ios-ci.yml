@@ -1,4 +1,4 @@
-name: iOS CI
+name: Maxgravity CI
 
 on:
   push:
@@ -8,7 +8,50 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  bridge:
+    name: Bridge checks
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: bridge
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: bridge/package-lock.json
+
+      - name: Install bridge dependencies
+        run: npm ci
+
+      - name: Bridge typecheck
+        run: npm run typecheck
+
+      - name: Bridge lint
+        run: npm run lint
+
+      - name: Bridge tests
+        run: npm test
+
+      - name: Bridge build
+        run: npm run build
+
+      - name: Bridge security audit
+        run: npm run security:audit
+
+      - name: Bridge secret scan
+        run: npm run secret-scan
+
+      - name: Bridge license summary
+        run: npm exec --yes license-checker -- --summary --production
+
+  ios:
+    name: iOS build and packaging
+    needs: bridge
     runs-on: macos-15
     steps:
       - name: Checkout
@@ -21,6 +64,19 @@ jobs:
 
       - name: Show Xcode version
         run: xcodebuild -version
+
+      - name: Check iOS static policy
+        run: node scripts/check-ios-static.mjs
+
+      - name: Swift source lint
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v swiftformat >/dev/null 2>&1; then
+            swiftformat --lint Maxgravity
+          else
+            echo "swiftformat not installed on runner; relying on xcodebuild compiler diagnostics."
+          fi
 
       - name: Build Maxgravity for simulator
         run: >

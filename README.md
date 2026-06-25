@@ -4,39 +4,51 @@ Maxgravity is a native SwiftUI iPhone companion app for Antigravity sessions run
 
 This workspace contains:
 
-- A new iOS app scaffold targeting iOS 17+
-- Phase 1 and 2 native UI implementation with realistic mock data
-- Bridge-facing protocols and DTOs for the local Maxgravity Bridge
-- Preview-friendly architecture for macOS/Xcode handoff
+- A native iPhone-only SwiftUI app targeting iOS 17+
+- A local TypeScript Maxgravity Bridge scaffold for Windows
+- QR pairing, trusted-device, workspace confinement, and bridge event schemas
+- CI for iOS builds, bridge checks, security audit, and static policy checks
 
 ## Structure
 
 - `Maxgravity/`: app source, assets, and plist
 - `Maxgravity.xcodeproj/`: Xcode project
-- `docs/bridge-contract.md`: local bridge API contract and payload guidance
+- `bridge/`: local bridge source, tests, and package scripts
+- `docs/`: production architecture, security, pairing, integration, build, and readiness documents
+- `scripts/check-ios-static.mjs`: private API and product-accent policy check
 
 ## Current implementation status
 
 - Implemented:
-  - First launch pairing shell
-  - Spaces
-  - New Task
-  - Chat / Live Task Thread
-  - Task detail drill-ins
-  - Activity
-  - Schedule sheet
-  - Settings
-  - Shared UI system and mock repositories
-- Deferred to a macOS/Xcode environment:
-  - Build verification
-  - Real iOS 26 Liquid Glass API adoption against the iOS 26 SDK
-  - Screenshot capture
-  - Final logo/app-icon asset integration
-  - Real Maxgravity Bridge transport
+  - Two-main-screen iOS shell: Spaces and Chat
+  - Contextual New Task flow and attachment menu
+  - Activity and Settings panel presentation state
+  - Real Maxgravity brand assets and app icons
+  - Bridge pairing token expiry, replay rejection, trusted-device auth, revocation, workspace root confinement, schema validation, redaction, and tests
+  - CI artifact packaging for unsigned iOS builds
+- Partial:
+  - FloatingPanel-backed Activity and Settings panels
+  - ActivityKit/local notification shell
+  - Bridge-to-iOS live event contract
+- Unsupported until verified:
+  - Official Antigravity task/session control through CLI or SDK
+  - Remote background Live Activity pushes from Windows bridge without Apple Developer/APNs setup
 
 ## Open in Xcode
 
 1. Open `Maxgravity.xcodeproj` on macOS with Xcode that supports iOS 17+.
-2. Replace the placeholder logo/icon treatment with the official Maxgravity assets.
-3. If building with the iOS 26 SDK, swap the isolated surface wrappers to the official Liquid Glass APIs noted in code comments.
-4. Run on iPhone 14 Pro Max first, then validate smaller iPhones.
+2. Run the `Maxgravity` scheme on an iPhone 14 Pro Max simulator first.
+3. Validate smaller iPhone layouts, Dynamic Type, Reduce Motion, and Reduce Transparency.
+4. Use GitHub Actions artifacts for unsigned IPA packaging when local signing is unavailable.
+
+## Bridge commands
+
+```powershell
+cd bridge
+npm install
+npm run typecheck
+npm run lint
+npm test
+npm run build
+npm run secret-scan
+```

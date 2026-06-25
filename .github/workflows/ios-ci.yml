@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,12 +22,72 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
-      - name: Build Maxgravity
+      - name: Build Maxgravity for simulator
         run: >
           xcodebuild
           -project Maxgravity.xcodeproj
           -target Maxgravity
+          -configuration Release
           -destination 'generic/platform=iOS Simulator'
           -sdk iphonesimulator
+          -derivedDataPath build/DerivedData
           CODE_SIGNING_ALLOWED=NO
           build
+
+      - name: Build Maxgravity for device
+        run: >
+          xcodebuild
+          -project Maxgravity.xcodeproj
+          -target Maxgravity
+          -configuration Release
+          -sdk iphoneos
+          -derivedDataPath build/DerivedData
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
+          CODE_SIGN_IDENTITY=""
+          build
+
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="build/DerivedData/Build/Products/Release-iphoneos/Maxgravity.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Expected app bundle not found at $APP_PATH"
+            exit 1
+          fi
+          rm -rf build/Payload
+          mkdir -p build/Payload
+          cp -R "$APP_PATH" build/Payload/Maxgravity.app
+          (
+            cd build
+            /usr/bin/zip -qry Maxgravity-unsigned.ipa Payload
+          )
+
+      - name: Package simulator app bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="build/DerivedData/Build/Products/Release-iphonesimulator/Maxgravity.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Expected simulator app bundle not found at $APP_PATH"
+            exit 1
+          fi
+          (
+            cd build/DerivedData/Build/Products/Release-iphonesimulator
+            /usr/bin/zip -qry ../../../../../Maxgravity-simulator-app.zip Maxgravity.app
+          )
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: maxgravity-unsigned-ipa
+          path: build/Maxgravity-unsigned.ipa
+          if-no-files-found: error
+
+      - name: Upload simulator app bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: maxgravity-simulator-app
+          path: build/Maxgravity-simulator-app.zip
+          if-no-files-found: error

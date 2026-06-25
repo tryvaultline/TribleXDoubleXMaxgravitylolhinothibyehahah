@@ -73,10 +73,7 @@ jobs:
             echo "Expected simulator app bundle not found at $APP_PATH"
             exit 1
           fi
-          (
-            cd build/DerivedData/Build/Products/Release-iphonesimulator
-            /usr/bin/zip -qry ../../../../../Maxgravity-simulator-app.zip Maxgravity.app
-          )
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" build/Maxgravity-simulator-app.zip
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4

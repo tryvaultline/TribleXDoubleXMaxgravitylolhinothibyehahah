@@ -3,11 +3,11 @@ import Fastify, { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { WebSocket } from "ws";
 import { fingerprint } from "./crypto.js";
 import { PairingError, PairingManager } from "./pairing.js";
-import { BridgeEventSchema, TrustDeviceRequestSchema, WorkspaceRoot } from "./schemas.js";
+import { TrustDeviceRequestSchema, WorkspaceRoot } from "./schemas.js";
 import { MemoryTrustStore, TrustStore } from "./trust-store.js";
 import { redactSensitive } from "./redaction.js";
 import { WorkspaceBrowser, WorkspaceError } from "./workspace.js";
-import { AntigravityAdapter, OfficialAntigravityAdapterPlaceholder, UnsupportedCapabilityError } from "./antigravity-adapter.js";
+import { AntigravityAdapter, PythonSidecarAdapter, UnsupportedCapabilityError } from "./antigravity-adapter.js";
 
 interface BuildServerOptions {
   trustStore?: TrustStore;
@@ -20,7 +20,7 @@ interface BuildServerOptions {
 
 export async function buildServer(options: BuildServerOptions = {}): Promise<FastifyInstance> {
   const trustStore = options.trustStore ?? new MemoryTrustStore();
-  const adapter = options.adapter ?? new OfficialAntigravityAdapterPlaceholder();
+  const adapter = options.adapter ?? new PythonSidecarAdapter();
   const browser = new WorkspaceBrowser(options.workspaceRoots ?? []);
   const pairing = new PairingManager(trustStore, {
     address: options.address ?? "wss://127.0.0.1:59443",
@@ -45,6 +45,14 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   }));
 
   app.post("/v1/connection/pairing-sessions", async () => pairing.createSession());
+
+  app.get("/v1/connection/active-session", async (request, reply) => {
+    try {
+      return pairing.getActiveSessionMetadata();
+    } catch (error) {
+      return sendPairingError(reply, error);
+    }
+  });
 
   app.post("/v1/connection/trust", async (request, reply) => {
     const parsed = TrustDeviceRequestSchema.safeParse(request.body);
@@ -111,20 +119,102 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     }
   });
 
+  app.post<{ Body: { rootId: string; path: string; name: string } }>("/v1/workspace/create-folder", async (request, reply) => {
+    const auth = await authenticateRequest(pairing, request, reply);
+    if (!auth) {
+      return;
+    }
+    const { rootId, path, name } = request.body;
+    try {
+      const relative = await browser.createFolder(rootId, path, name);
+      return { status: "created", path: relative };
+    } catch (error) {
+      if (error instanceof WorkspaceError) {
+        return reply.code(403).send({ error: error.code });
+      }
+      throw error;
+    }
+  });
+
+  app.get("/v1/spaces", async (request, reply) => {
+    const auth = await authenticateRequest(pairing, request, reply);
+    if (!auth) {
+      return;
+    }
+    const roots = browser.listRoots();
+    const spaces = [];
+    for (const root of roots) {
+      const chats = await (adapter as PythonSidecarAdapter).listConversations(root.id).catch(() => []);
+      const mapped = chats.map(mapConversation);
+      spaces.push({
+        id: root.id,
+        name: root.name,
+        chats: mapped,
+        isPinned: false,
+        statusText: chats.some((c: any) => ["Planning changes", "Reading files", "Updating files", "Running commands", "Running tests", "Awaiting approval"].includes(c.status)) ? "Running" : null
+      });
+    }
+    return spaces;
+  });
+
+  app.post("/v1/tasks", async (request, reply) => {
+    const auth = await authenticateRequest(pairing, request, reply);
+    if (!auth) {
+      return;
+    }
+    const body = request.body as any;
+    const { spaceId, title, prompt, workspaceRoot } = body;
+    const apiKey = parseBearer(request.headers.authorization);
+    
+    const conv = await (adapter as PythonSidecarAdapter).createConversation(spaceId, title || "New task");
+    await (adapter as PythonSidecarAdapter).chat(conv.conversationId, prompt, workspaceRoot, apiKey);
+    return conv;
+  });
+
+  app.post<{ Params: { taskId: string } }>("/v1/tasks/:taskId/messages", async (request, reply) => {
+    const auth = await authenticateRequest(pairing, request, reply);
+    if (!auth) {
+      return;
+    }
+    const body = request.body as any;
+    const { prompt, workspaceRoot } = body;
+    const apiKey = parseBearer(request.headers.authorization);
+    
+    await (adapter as PythonSidecarAdapter).chat(request.params.taskId, prompt, workspaceRoot, apiKey);
+    return { status: "sent" };
+  });
+
+  app.get<{ Params: { taskId: string } }>("/v1/tasks/:taskId", async (request, reply) => {
+    const auth = await authenticateRequest(pairing, request, reply);
+    if (!auth) {
+      return;
+    }
+    const chats = await (adapter as PythonSidecarAdapter).listConversations().catch(() => []);
+    const chat = chats.find((c: any) => c.id === request.params.taskId);
+    if (!chat) {
+      return reply.code(404).send({ error: "CHAT_NOT_FOUND" });
+    }
+    return mapConversation(chat);
+  });
+
   app.get("/v1/tasks/:taskId/events", { websocket: true }, async (socket: WebSocket, request) => {
     try {
       await pairing.authenticate(
         String(request.headers["x-mg-device-id"] ?? ""),
         parseBearer(request.headers.authorization)
       );
-      const event = BridgeEventSchema.parse({
-        type: "task.stage",
-        taskId: (request.params as { taskId: string }).taskId,
-        stage: "Checking workspace",
-        detail: "WebSocket transport is authenticated; official Antigravity streaming is not connected yet.",
-        emittedAt: new Date().toISOString()
+      
+      const taskId = (request.params as { taskId: string }).taskId;
+      
+      const unsubscribe = (adapter as PythonSidecarAdapter).onEvent((event: any) => {
+        if (event.taskId === taskId) {
+          socket.send(JSON.stringify(redactSensitive(event)));
+        }
       });
-      socket.send(JSON.stringify(redactSensitive(event)));
+      
+      socket.on("close", () => {
+        unsubscribe();
+      });
     } catch {
       socket.close(1008, "Unauthorized");
     }
@@ -167,4 +257,96 @@ function sendPairingError(reply: FastifyReply, error: unknown): FastifyReply {
     return reply.code(status).send({ error: error.code, detail: error.message });
   }
   throw error;
+}
+
+function mapConversation(c: any) {
+  const isRunning = [
+    "Planning changes",
+    "Reading files",
+    "Checking workspace",
+    "Updating styles",
+    "Applying changes",
+    "Running commands",
+    "Running tests",
+    "Awaiting approval"
+  ].includes(c.status);
+
+  const timeline = [];
+  let stateTone = "neutral";
+  
+  if (c.status === "Task completed") {
+    stateTone = "good";
+    timeline.push({
+      id: `${c.id}-completed`,
+      title: "Task completed",
+      detail: "Agent completed the requested changes.",
+      duration: "0s",
+      tone: "good",
+      isComplete: true
+    });
+  } else if (c.status === "Task failed") {
+    stateTone = "critical";
+    timeline.push({
+      id: `${c.id}-failed`,
+      title: "Task failed",
+      detail: "Task execution failed.",
+      duration: "0s",
+      tone: "critical",
+      isComplete: true
+    });
+  } else {
+    stateTone = c.status === "Awaiting approval" ? "warning" : "neutral";
+    timeline.push({
+      id: `${c.id}-current`,
+      title: c.status,
+      detail: "Live step streamed from bridge...",
+      duration: "Live",
+      tone: stateTone,
+      isComplete: false
+    });
+  }
+
+  return {
+    id: c.id,
+    title: c.title,
+    lastActivity: c.updatedAt,
+    isRunning: isRunning,
+    isPinned: false,
+    thread: {
+      id: c.id,
+      title: c.title,
+      stateText: c.status,
+      stateTone: stateTone,
+      messages: [
+        {
+          id: `${c.id}-msg-user`,
+          role: "user",
+          body: `Start task: ${c.title}`,
+          timestamp: c.createdAt,
+          delivered: true,
+          attachments: []
+        }
+      ],
+      timeline: timeline,
+      files: [],
+      diffs: [],
+      commands: [],
+      approval: c.status === "Awaiting approval" ? {
+        id: `${c.id}-approval`,
+        title: "Approval required",
+        summary: "Agent is awaiting permission to proceed.",
+        scope: "Command/Write action",
+        affectedItems: []
+      } : null,
+      completion: c.status === "Task completed" ? {
+        summary: "Task finished successfully.",
+        filesChanged: 0,
+        linesAdded: 0,
+        linesRemoved: 0,
+        checksRun: [],
+        warnings: [],
+        fullReply: "The task was completed successfully."
+      } : null
+    }
+  };
 }

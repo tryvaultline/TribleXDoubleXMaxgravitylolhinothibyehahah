@@ -2,6 +2,63 @@ import ActivityKit
 import Foundation
 import Observation
 import UserNotifications
+import Security
+
+struct MGKeychainSession: Codable {
+    let address: String
+    let deviceId: String
+    let deviceSecret: String
+    let computerName: String
+}
+
+struct MGKeychainHelper {
+    private static let service = "com.tryvaultline.maxgravity"
+    private static let account = "paired-session"
+
+    static func save(_ session: MGKeychainSession) -> Bool {
+        guard let data = try? JSONEncoder().encode(session) else { return false }
+        
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecValueData as String: data
+        ]
+        
+        SecItemDelete(query as CFDictionary)
+        
+        let status = SecItemAdd(query as CFDictionary, nil)
+        return status == errSecSuccess
+    }
+
+    static func load() -> MGKeychainSession? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        
+        var dataTypeRef: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &dataTypeRef)
+        
+        guard status == errSecSuccess, let data = dataTypeRef as? Data else {
+            return nil
+        }
+        
+        return try? JSONDecoder().decode(MGKeychainSession.self, from: data)
+    }
+
+    static func delete() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+}
 
 protocol MGBridgeClient {
     func fetchConnectionStatus() async throws -> MGComputerStatus?
@@ -12,6 +69,15 @@ protocol MGBridgeClient {
     func approvedRoots() async throws -> [MGRemoteFileNode]
     func capabilityMatrix() async throws -> [MGBridgeCapability]
     func preparePairingSession() async throws -> MGPairingQRCodePayload
+    
+    // Live integrations
+    func isPaired() -> Bool
+    func pairDevice(payload: MGPairingQRCodePayload, deviceName: String, fingerprint: String) async throws -> MGKeychainSession
+    func createTask(spaceId: String, title: String, prompt: String, workspaceRoot: String) async throws -> MGChatSummary
+    func sendMessage(taskId: String, prompt: String, workspaceRoot: String) async throws
+    func createFolder(rootId: String, path: String, name: String) async throws
+    func getTask(taskId: String) async throws -> MGChatSummary
+    func disconnect()
 }
 
 protocol MGSpacesRepository {
@@ -45,7 +111,334 @@ struct MGInMemorySettingsStore: MGSettingsStore {
     var defaultSpaceID: String?
 }
 
-struct MGMockBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository, MGActivityRepository, MGWorkspaceRepository {
+class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository, MGActivityRepository, MGWorkspaceRepository {
+    private var session: MGKeychainSession? {
+        MGKeychainHelper.load()
+    }
+
+    private var activeSession: MGKeychainSession {
+        get throws {
+            guard let s = session else {
+                throw NSError(domain: "MGRealBridgeClient", code: 401, userInfo: [NSLocalizedDescriptionKey: "No active paired session"])
+            }
+            return s
+        }
+    }
+
+    func isPaired() -> Bool {
+        return session != nil
+    }
+
+    func disconnect() {
+        MGKeychainHelper.delete()
+    }
+
+    func pairDevice(payload: MGPairingQRCodePayload, deviceName: String, fingerprint: String) async throws -> MGKeychainSession {
+        let httpAddress = payload.address
+            .replacingOccurrences(of: "wss://", with: "https://")
+            .replacingOccurrences(of: "ws://", with: "http://")
+        
+        guard let url = URL(string: "\(httpAddress)/v1/connection/trust") else {
+            throw NSError(domain: "MGRealBridgeClient", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid bridge URL"])
+        }
+        
+        struct TrustReq: Codable {
+            let sessionId: String
+            let token: String
+            let deviceName: String
+            let devicePublicKeyFingerprint: String
+        }
+        
+        let reqData = TrustReq(
+            sessionId: payload.sessionId,
+            token: payload.token,
+            deviceName: deviceName,
+            devicePublicKeyFingerprint: fingerprint
+        )
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(reqData)
+        
+        let urlSession = URLSession(configuration: .default, delegate: MGTrustAllCertsDelegate(), delegateQueue: nil)
+        let (data, response) = try await urlSession.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(domain: "MGRealBridgeClient", code: 500, userInfo: [NSLocalizedDescriptionKey: "Invalid response type"])
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            let errString = String(data: data, encoding: .utf8) ?? "Status code \(httpResponse.statusCode)"
+            throw NSError(domain: "MGRealBridgeClient", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: errString])
+        }
+        
+        struct TrustResp: Codable {
+            struct Device: Codable {
+                let id: String
+                let name: String
+            }
+            let device: Device
+            let deviceSecret: String
+        }
+        
+        let resp = try JSONDecoder().decode(TrustResp.self, from: data)
+        let newSession = MGKeychainSession(
+            address: payload.address,
+            deviceId: resp.device.id,
+            deviceSecret: resp.deviceSecret,
+            computerName: deviceName
+        )
+        
+        _ = MGKeychainHelper.save(newSession)
+        return newSession
+    }
+
+    private func performRequest<T: Decodable>(path: String, method: String = "GET", body: Data? = nil) async throws -> T {
+        let s = try activeSession
+        let httpAddress = s.address
+            .replacingOccurrences(of: "wss://", with: "https://")
+            .replacingOccurrences(of: "ws://", with: "http://")
+        
+        guard let url = URL(string: "\(httpAddress)\(path)") else {
+            throw NSError(domain: "MGRealBridgeClient", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(s.deviceSecret)", forHTTPHeaderField: "Authorization")
+        request.setValue(s.deviceId, forHTTPHeaderField: "X-MG-Device-Id")
+        if let body = body {
+            request.httpBody = body
+        }
+        
+        let urlSession = URLSession(configuration: .default, delegate: MGTrustAllCertsDelegate(), delegateQueue: nil)
+        let (data, response) = try await urlSession.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(domain: "MGRealBridgeClient", code: 500, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            let errString = String(data: data, encoding: .utf8) ?? "Status code \(httpResponse.statusCode)"
+            throw NSError(domain: "MGRealBridgeClient", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: errString])
+        }
+        
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(T.self, from: data)
+    }
+
+    func fetchConnectionStatus() async throws -> MGComputerStatus? {
+        do {
+            let s = try activeSession
+            struct HealthResponse: Codable {
+                let status: String
+                let bridgeVersion: String
+                let time: String
+            }
+            let health: HealthResponse = try await performRequest(path: "/v1/connection/health")
+            
+            return MGComputerStatus(
+                id: s.deviceId,
+                computerName: s.computerName,
+                isOnline: health.status == "Live",
+                quality: .excellent,
+                lastSync: Date(),
+                encryption: "Pinned local transport",
+                supportedPermissionModes: [.sandbox, .askWhenNeeded, .sensitiveAutoReview],
+                connectionAddress: s.address,
+                pairing: .live,
+                liveBridge: .live
+            )
+        } catch {
+            return nil
+        }
+    }
+
+    func listSpaces() async throws -> [MGSpaceSummary] {
+        return try await performRequest(path: "/v1/spaces")
+    }
+
+    func listActivity() async throws -> [MGActivityBucket] {
+        let spaces = try await listSpaces()
+        var runningItems: [MGActivityListItem] = []
+        var approvalItems: [MGActivityListItem] = []
+        
+        for space in spaces {
+            for chat in space.chats {
+                if chat.isRunning {
+                    runningItems.append(MGActivityListItem(
+                        id: chat.id,
+                        title: chat.title,
+                        detail: space.name,
+                        tone: .good,
+                        route: .chat(chatID: chat.id)
+                    ))
+                }
+                if chat.thread.approval != nil {
+                    approvalItems.append(MGActivityListItem(
+                        id: "approval-\(chat.id)",
+                        title: chat.thread.approval?.title ?? "Approve changes",
+                        detail: chat.title,
+                        tone: .warning,
+                        route: .chat(chatID: chat.id)
+                    ))
+                }
+            }
+        }
+        
+        return [
+            MGActivityBucket(id: "running", title: "Running now", items: runningItems),
+            MGActivityBucket(id: "approval", title: "Needs approval", items: approvalItems),
+            MGActivityBucket(id: "scheduled", title: "Scheduled", items: [])
+        ]
+    }
+
+    func listSchedules() async throws -> [MGScheduledTask] {
+        return []
+    }
+
+    func availableModels() async throws -> [MGModelOption] {
+        struct CapabilityResponse: Codable {
+            struct BridgeCap: Codable {
+                let id: String
+                let title: String
+                let status: String
+                let notes: String
+            }
+            struct AgentCap: Codable {
+                let id: String
+                let name: String
+                let description: String
+                let isRecommended: Bool
+                let state: String
+            }
+            let bridge: [BridgeCap]
+            let antigravity: [AgentCap]
+        }
+        do {
+            let cap: CapabilityResponse = try await performRequest(path: "/v1/capabilities")
+            return cap.antigravity.map { agent in
+                let availability: MGCapabilityState
+                switch agent.state.lowercased() {
+                case "live": availability = .live
+                case "partial": availability = .partial
+                case "mock": availability = .mock
+                default: availability = .unsupported
+                }
+                return MGModelOption(
+                    id: agent.id,
+                    title: agent.name,
+                    subtitle: agent.description,
+                    isRecommended: agent.isRecommended,
+                    availability: availability
+                )
+            }
+        } catch {
+            return MGFixtures.models
+        }
+    }
+
+    func approvedRoots() async throws -> [MGRemoteFileNode] {
+        return try await performRequest(path: "/v1/workspace/roots")
+    }
+
+    func capabilityMatrix() async throws -> [MGBridgeCapability] {
+        struct CapabilityResponse: Codable {
+            struct BridgeCap: Codable {
+                let id: String
+                let title: String
+                let status: String
+                let notes: String
+            }
+            let bridge: [BridgeCap]
+        }
+        do {
+            let cap: CapabilityResponse = try await performRequest(path: "/v1/capabilities")
+            return cap.bridge.map { bc in
+                let state: MGCapabilityState
+                switch bc.status.lowercased() {
+                case "live": state = .live
+                case "partial": state = .partial
+                case "mock": state = .mock
+                default: state = .unsupported
+                }
+                return MGBridgeCapability(id: bc.id, title: bc.title, state: state, detail: bc.notes)
+            }
+        } catch {
+            return []
+        }
+    }
+
+    func preparePairingSession() async throws -> MGPairingQRCodePayload {
+        return MGFixtures.pairingPayload
+    }
+
+    func createTask(spaceId: String, title: String, prompt: String, workspaceRoot: String) async throws -> MGChatSummary {
+        struct CreateTaskBody: Codable {
+            let spaceId: String
+            let title: String
+            let prompt: String
+            let workspaceRoot: String
+        }
+        let body = CreateTaskBody(spaceId: spaceId, title: title, prompt: prompt, workspaceRoot: workspaceRoot)
+        let bodyData = try JSONEncoder().encode(body)
+        
+        struct CreateTaskResponse: Codable {
+            let conversationId: String
+            let title: String
+            let status: String
+        }
+        
+        let resp: CreateTaskResponse = try await performRequest(path: "/v1/tasks", method: "POST", body: bodyData)
+        return try await getTask(taskId: resp.conversationId)
+    }
+
+    func sendMessage(taskId: String, prompt: String, workspaceRoot: String) async throws {
+        struct SendMsgBody: Codable {
+            let prompt: String
+            let workspaceRoot: String
+        }
+        let body = SendMsgBody(prompt: prompt, workspaceRoot: workspaceRoot)
+        let bodyData = try JSONEncoder().encode(body)
+        
+        struct EmptyResponse: Codable {}
+        let _: EmptyResponse = try await performRequest(path: "/v1/tasks/\(taskId)/messages", method: "POST", body: bodyData)
+    }
+
+    func createFolder(rootId: String, path: String, name: String) async throws {
+        struct CreateFolderBody: Codable {
+            let rootId: String
+            let path: String
+            let name: String
+        }
+        let body = CreateFolderBody(rootId: rootId, path: path, name: name)
+        let bodyData = try JSONEncoder().encode(body)
+        
+        struct EmptyResponse: Codable {}
+        let _: EmptyResponse = try await performRequest(path: "/v1/workspace/create-folder", method: "POST", body: bodyData)
+    }
+
+    func getTask(taskId: String) async throws -> MGChatSummary {
+        return try await performRequest(path: "/v1/tasks/\(taskId)")
+    }
+}
+
+class MGTrustAllCertsDelegate: NSObject, URLSessionDelegate {
+    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
+            if let serverTrust = challenge.protectionSpace.serverTrust {
+                completionHandler(.useCredential, URLCredential(trust: serverTrust))
+                return
+            }
+        }
+        completionHandler(.performDefaultHandling, nil)
+    }
+}
+
+struct MGMockBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository, MGWorkspaceRepository {
     func fetchConnectionStatus() async throws -> MGComputerStatus? { nil }
     func listSpaces() async throws -> [MGSpaceSummary] { MGFixtures.spaces }
     func listActivity() async throws -> [MGActivityBucket] { MGFixtures.activityBuckets }
@@ -54,10 +447,23 @@ struct MGMockBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository
     func approvedRoots() async throws -> [MGRemoteFileNode] { MGFixtures.remoteRoots }
     func capabilityMatrix() async throws -> [MGBridgeCapability] { MGFixtures.capabilities }
     func preparePairingSession() async throws -> MGPairingQRCodePayload { MGFixtures.pairingPayload }
+    
+    func isPaired() -> Bool { false }
+    func pairDevice(payload: MGPairingQRCodePayload, deviceName: String, fingerprint: String) async throws -> MGKeychainSession {
+        return MGKeychainSession(address: "", deviceId: "", deviceSecret: "", computerName: "")
+    }
+    func createTask(spaceId: String, title: String, prompt: String, workspaceRoot: String) async throws -> MGChatSummary {
+        return MGFixtures.spaces[0].chats[0]
+    }
+    func sendMessage(taskId: String, prompt: String, workspaceRoot: String) async throws {}
+    func createFolder(rootId: String, path: String, name: String) async throws {}
+    func getTask(taskId: String) async throws -> MGChatSummary {
+        return MGFixtures.spaces[0].chats[0]
+    }
+    func disconnect() {}
+
     func spaces() async throws -> [MGSpaceSummary] { MGFixtures.spaces }
     func models() async throws -> [MGModelOption] { MGFixtures.models }
-    func activityBuckets() async throws -> [MGActivityBucket] { MGFixtures.activityBuckets }
-    func schedules() async throws -> [MGScheduledTask] { MGFixtures.schedules }
     func roots() async throws -> [MGRemoteFileNode] { MGFixtures.remoteRoots }
 }
 
@@ -123,35 +529,36 @@ final class MGAppModel {
 
     var connection: MGComputerStatus?
     var trustedDevices: [MGTrustedDevice] = MGFixtures.trustedDevices
-    var spaces: [MGSpaceSummary] = MGFixtures.spaces
-    var activityBuckets: [MGActivityBucket] = MGFixtures.activityBuckets
-    var schedules: [MGScheduledTask] = MGFixtures.schedules
-    var models: [MGModelOption] = MGFixtures.models
-    var remoteRoots: [MGRemoteFileNode] = MGFixtures.remoteRoots
-    var capabilities: [MGBridgeCapability] = MGFixtures.capabilities
+    var spaces: [MGSpaceSummary] = []
+    var activityBuckets: [MGActivityBucket] = []
+    var schedules: [MGScheduledTask] = []
+    var models: [MGModelOption] = []
+    var remoteRoots: [MGRemoteFileNode] = []
+    var capabilities: [MGBridgeCapability] = []
     var pairingPayload: MGPairingQRCodePayload = MGFixtures.pairingPayload
     var notificationPreferences = MGNotificationPreferences()
     var notificationsAuthorized = false
     var liveActivityDiagnostics = "Not started"
 
-    var expandedSpaceIDs: Set<String> = [MGFixtures.spaces.first?.id ?? ""]
+    var expandedSpaceIDs: Set<String> = []
 
     var draftPrompt = ""
     var draftMicrophoneEnabled = false
     var draftContext = MGTaskContext(
-        workingFolder: "C:\\Users\\kuroi\\OneDrive\\Desktop\\Vaultline-V\\Best Version Of Vaultline Web UI",
+        workingFolder: "",
         permissionMode: .askWhenNeeded,
         planMode: false,
-        selectedModel: MGFixtures.models[0],
-        mentionedFiles: ["src/components/BottomBar.tsx", "README.md"]
+        selectedModel: MGModelOption(id: "auto", title: "Auto", subtitle: "Recommended model", isRecommended: true, availability: .live),
+        mentionedFiles: []
     )
 
     private let bridge: MGBridgeClient
     private var settingsStore: MGSettingsStore
     private let liveActivityController = MGTaskLiveActivityController()
+    private var webSocketTask: URLSessionWebSocketTask?
 
     init(
-        bridge: MGBridgeClient = MGMockBridgeClient(),
+        bridge: MGBridgeClient = MGRealBridgeClient(),
         settingsStore: MGSettingsStore = MGInMemorySettingsStore()
     ) {
         self.bridge = bridge
@@ -163,12 +570,35 @@ final class MGAppModel {
     func bootstrap() async {
         do {
             connection = try await bridge.fetchConnectionStatus()
-            spaces = try await bridge.listSpaces()
-            activityBuckets = try await bridge.listActivity()
-            schedules = try await bridge.listSchedules()
-            models = try await bridge.availableModels()
-            remoteRoots = try await bridge.approvedRoots()
-            capabilities = try await bridge.capabilityMatrix()
+            if connection != nil {
+                spaces = try await bridge.listSpaces()
+                activityBuckets = try await bridge.listActivity()
+                schedules = try await bridge.listSchedules()
+                models = try await bridge.availableModels()
+                remoteRoots = try await bridge.approvedRoots()
+                capabilities = try await bridge.capabilityMatrix()
+                
+                // Initialize default workspace configurations
+                if let firstRoot = remoteRoots.first {
+                    if draftContext.workingFolder.isEmpty {
+                        draftContext.workingFolder = firstRoot.path
+                    }
+                }
+                if let firstModel = models.first {
+                    draftContext.selectedModel = firstModel
+                }
+                if expandedSpaceIDs.isEmpty, let firstSpace = spaces.first {
+                    expandedSpaceIDs.insert(firstSpace.id)
+                }
+            } else {
+                // If not connected, clear live data
+                spaces = []
+                activityBuckets = []
+                schedules = []
+                models = []
+                remoteRoots = []
+                capabilities = []
+            }
             pairingPayload = try await bridge.preparePairingSession()
         } catch {
             liveActivityDiagnostics = "Bridge bootstrap failed: \(error.localizedDescription)"
@@ -177,10 +607,30 @@ final class MGAppModel {
 
     func connectMockComputer() {
         connection = MGFixtures.connectedComputer
+        spaces = MGFixtures.spaces
+        activityBuckets = MGFixtures.activityBuckets
+        schedules = MGFixtures.schedules
+        models = MGFixtures.models
+        remoteRoots = MGFixtures.remoteRoots
+        capabilities = MGFixtures.capabilities
+    }
+
+    func pair(payload: MGPairingQRCodePayload, name: String = "iOS Companion") async throws {
+        let fingerprint = UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(16).uppercased()
+        _ = try await bridge.pairDevice(payload: payload, deviceName: name, fingerprint: String(fingerprint))
+        await bootstrap()
     }
 
     func disconnectCurrentComputer() {
+        bridge.disconnect()
+        stopTaskEventStreaming()
         connection = nil
+        spaces = []
+        activityBuckets = []
+        schedules = []
+        models = []
+        remoteRoots = []
+        capabilities = []
         path = []
         presentedSheet = nil
         presentedFullScreen = nil
@@ -201,6 +651,7 @@ final class MGAppModel {
 
     func openChat(_ chatID: String) {
         path.append(.chat(chatID: chatID))
+        startTaskEventStreaming(taskId: chatID)
     }
 
     func openNewTask(spaceID: String) {
@@ -240,9 +691,13 @@ final class MGAppModel {
             .map(String.init)
             .flatMap { $0.isEmpty ? nil : $0 } ?? "New task"
 
+        let prompt = draftPrompt
+        let space = spaces[spaceIndex]
+        let newChatID = UUID().uuidString
         let now = Date()
-        let thread = MGTaskThread(
-            id: UUID().uuidString,
+        
+        let initialThread = MGTaskThread(
+            id: newChatID,
             title: title,
             stateText: "Planning changes",
             stateTone: .neutral,
@@ -250,40 +705,21 @@ final class MGAppModel {
                 MGThreadMessage(
                     id: UUID().uuidString,
                     role: .user,
-                    body: draftPrompt.isEmpty ? "Describe what you want Maxgravity to build, change, review, or investigate…" : draftPrompt,
+                    body: prompt,
                     timestamp: now,
                     delivered: true,
                     attachments: draftContext.mentionedFiles.map {
                         MGArtifactSummary(id: UUID().uuidString, kind: .file, title: $0, detail: "Mentioned file")
                     }
-                ),
-                MGThreadMessage(
-                    id: UUID().uuidString,
-                    role: .assistant,
-                    body: "Planning the task using the selected workspace, permission mode, and model. Live bridge execution remains partial until the desktop QR-paired transport is active.",
-                    timestamp: now.addingTimeInterval(8),
-                    delivered: true,
-                    attachments: [
-                        MGArtifactSummary(id: UUID().uuidString, kind: .command, title: draftContext.selectedModel.title, detail: "Selected model"),
-                        MGArtifactSummary(id: UUID().uuidString, kind: .file, title: draftContext.workingFolder, detail: "Working folder")
-                    ]
                 )
             ],
             timeline: [
                 MGActivityEvent(
                     id: UUID().uuidString,
                     title: "Planning changes",
-                    detail: "Interpreting the request and preparing the task context.",
-                    duration: "0.3s",
-                    tone: .neutral,
-                    isComplete: true
-                ),
-                MGActivityEvent(
-                    id: UUID().uuidString,
-                    title: "Awaiting desktop bridge",
-                    detail: "Bridge transport is prepared but still using partial local scaffolding.",
+                    detail: "Interpreting request and preparing task context...",
                     duration: "Live",
-                    tone: .warning,
+                    tone: .neutral,
                     isComplete: false
                 )
             ],
@@ -293,26 +729,74 @@ final class MGAppModel {
             approval: nil,
             completion: nil
         )
-
-        let chat = MGChatSummary(
-            id: thread.id,
+        
+        let optChat = MGChatSummary(
+            id: newChatID,
             title: title,
             lastActivity: now,
             isRunning: true,
             isPinned: false,
-            thread: thread
+            thread: initialThread
         )
-
-        spaces[spaceIndex].chats.insert(chat, at: 0)
+        
+        spaces[spaceIndex].chats.insert(optChat, at: 0)
         expandedSpaceIDs.insert(spaceID)
         draftPrompt = ""
         presentedFullScreen = nil
-        openChat(chat.id)
+        openChat(optChat.id)
+        
         if let connection {
-            liveActivityController.startIfPossible(taskTitle: title, computerName: connection.computerName, stage: thread.stateText)
+            liveActivityController.startIfPossible(taskTitle: title, computerName: connection.computerName, stage: "Planning changes")
             liveActivityDiagnostics = liveActivityController.diagnostics
         }
-        return chat
+        
+        Task {
+            do {
+                let realChat = try await bridge.createTask(
+                    spaceId: spaceID,
+                    title: title,
+                    prompt: prompt,
+                    workspaceRoot: draftContext.workingFolder
+                )
+                
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    if let idx = self.spaces[spaceIndex].chats.firstIndex(where: { $0.id == newChatID }) {
+                        self.spaces[spaceIndex].chats[idx] = realChat
+                        
+                        // Swap route if open
+                        if let pathIdx = self.path.firstIndex(of: .chat(chatID: newChatID)) {
+                            self.path[pathIdx] = .chat(chatID: realChat.id)
+                        }
+                        
+                        self.startTaskEventStreaming(taskId: realChat.id)
+                    }
+                }
+            } catch {
+                print("Failed to spawn live task: \(error.localizedDescription)")
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    if let idx = self.spaces[spaceIndex].chats.firstIndex(where: { $0.id == newChatID }) {
+                        self.spaces[spaceIndex].chats[idx].isRunning = false
+                        self.spaces[spaceIndex].chats[idx].thread.stateText = "Task failed"
+                        self.spaces[spaceIndex].chats[idx].thread.stateTone = .critical
+                        self.spaces[spaceIndex].chats[idx].thread.timeline.append(
+                            MGActivityEvent(
+                                id: UUID().uuidString,
+                                title: "Task failed",
+                                detail: "Bridge call failed: \(error.localizedDescription)",
+                                duration: "0s",
+                                tone: .critical,
+                                isComplete: true
+                            )
+                        )
+                        self.liveActivityController.end()
+                    }
+                }
+            }
+        }
+        
+        return optChat
     }
 
     func updateDraftModel(_ model: MGModelOption) {
@@ -339,6 +823,7 @@ final class MGAppModel {
 
         for spaceIndex in spaces.indices {
             for chatIndex in spaces[spaceIndex].chats.indices where spaces[spaceIndex].chats[chatIndex].thread.approval?.id == requestID {
+                let chatId = spaces[spaceIndex].chats[chatIndex].id
                 let message = MGThreadMessage(
                     id: UUID().uuidString,
                     role: .user,
@@ -347,9 +832,157 @@ final class MGAppModel {
                     delivered: true,
                     attachments: []
                 )
-                spaces[spaceIndex].chats[chatIndex].thread.messages.append(message)
-                spaces[spaceIndex].chats[chatIndex].lastActivity = .now
+                spaces[spaceIndex].chats[spaceIndex].chats[chatIndex].thread.messages.append(message)
+                spaces[spaceIndex].chats[spaceIndex].chats[chatIndex].thread.approval = nil
+                spaces[spaceIndex].chats[spaceIndex].chats[chatIndex].lastActivity = .now
+                
+                Task {
+                    try? await bridge.sendMessage(taskId: chatId, prompt: guidance, workspaceRoot: draftContext.workingFolder)
+                }
                 return
+            }
+        }
+    }
+
+    func startTaskEventStreaming(taskId: String) {
+        webSocketTask?.cancel(with: .goingAway, reason: nil)
+        
+        guard let s = MGKeychainHelper.load() else { return }
+        let wsAddress = s.address
+            .replacingOccurrences(of: "https://", with: "wss://")
+            .replacingOccurrences(of: "http://", with: "ws://")
+        
+        guard let url = URL(string: "\(wsAddress)/v1/tasks/\(taskId)/events") else { return }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(s.deviceSecret)", forHTTPHeaderField: "Authorization")
+        request.setValue(s.deviceId, forHTTPHeaderField: "x-mg-device-id")
+        
+        let urlSession = URLSession(configuration: .default, delegate: MGTrustAllCertsDelegate(), delegateQueue: nil)
+        let wsTask = urlSession.webSocketTask(with: request)
+        self.webSocketTask = wsTask
+        wsTask.resume()
+        
+        listenForWsEvents(wsTask, taskId: taskId)
+    }
+
+    func stopTaskEventStreaming() {
+        webSocketTask?.cancel(with: .goingAway, reason: nil)
+        webSocketTask = nil
+    }
+
+    private func listenForWsEvents(_ task: URLSessionWebSocketTask, taskId: String) {
+        task.receive { [weak self] result in
+            guard let self = self, self.webSocketTask === task else { return }
+            switch result {
+            case .success(let message):
+                switch message {
+                case .string(let text):
+                    if let data = text.data(using: .utf8) {
+                        self.handleWsEventData(data, taskId: taskId)
+                    }
+                case .data(let data):
+                    self.handleWsEventData(data, taskId: taskId)
+                @unknown default:
+                    break
+                }
+                self.listenForWsEvents(task, taskId: taskId)
+            case .failure(let error):
+                print("WS connection failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func handleWsEventData(_ data: Data, taskId: String) {
+        struct WSEvent: Codable {
+            let type: String
+            let taskId: String
+            let stage: String?
+            let detail: String?
+            let approvalId: String?
+            let action: String?
+            let reason: String?
+            let affectedItems: [String]?
+        }
+        
+        guard let event = try? JSONDecoder().decode(WSEvent.self, from: data) else { return }
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            for spaceIndex in self.spaces.indices {
+                if let chatIndex = self.spaces[spaceIndex].chats.firstIndex(where: { $0.id == taskId }) {
+                    var chat = self.spaces[spaceIndex].chats[chatIndex]
+                    
+                    switch event.type {
+                    case "task.stage":
+                        if let stage = event.stage {
+                            chat.thread.stateText = stage
+                            
+                            let tone: MGActivityTone
+                            switch stage {
+                            case "Planning changes", "Checking workspace", "Reading files":
+                                tone = .neutral
+                            case "Updating styles", "Applying changes", "Running commands", "Running tests":
+                                tone = .good
+                            case "Awaiting approval":
+                                tone = .warning
+                            case "Task completed":
+                                tone = .good
+                                chat.isRunning = false
+                            case "Task failed":
+                                tone = .critical
+                                chat.isRunning = false
+                            default:
+                                tone = .neutral
+                            }
+                            chat.thread.stateTone = tone
+                            
+                            let newEvent = MGActivityEvent(
+                                id: UUID().uuidString,
+                                title: stage,
+                                detail: event.detail ?? "",
+                                duration: "Live",
+                                tone: tone,
+                                isComplete: stage == "Task completed"
+                            )
+                            chat.thread.timeline.append(newEvent)
+                            
+                            if chat.isRunning {
+                                self.liveActivityController.update(
+                                    stage: stage,
+                                    status: chat.isRunning ? "Running" : "Idle",
+                                    approvalRequired: chat.thread.approval != nil
+                                )
+                            } else {
+                                self.liveActivityController.end()
+                            }
+                        }
+                    case "approval.required":
+                        if let approvalId = event.approvalId {
+                            let approval = MGApprovalRequest(
+                                id: approvalId,
+                                title: event.action ?? "Approve required changes",
+                                summary: event.reason ?? "",
+                                scope: "Bridge validation scope",
+                                affectedItems: event.affectedItems ?? []
+                            )
+                            chat.thread.approval = approval
+                            chat.thread.stateText = "Awaiting approval"
+                            chat.thread.stateTone = .warning
+                            
+                            self.liveActivityController.update(
+                                stage: "Awaiting approval",
+                                status: "Suspended",
+                                approvalRequired: true
+                            )
+                        }
+                    default:
+                        break
+                    }
+                    
+                    self.spaces[spaceIndex].chats[chatIndex] = chat
+                    break
+                }
             }
         }
     }
@@ -373,10 +1006,12 @@ enum MGFixtures {
     ]
 
     static let pairingPayload = MGPairingQRCodePayload(
+        sessionId: "mock-session-12345678",
         address: "wss://192.168.1.18:59443",
         token: "MG-7K4Q-98N1",
-        desktopFingerprint: "3B:A7:E1:44:3F:92",
-        expiresAt: .now.addingTimeInterval(300)
+        bridgeFingerprint: "3B:A7:E1:44:3F:92",
+        expiresAt: .now.addingTimeInterval(300),
+        bridgeVersion: "0.1.0"
     )
 
     static let connectedComputer = MGComputerStatus(

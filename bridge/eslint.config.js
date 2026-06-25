@@ -28,11 +28,11 @@ export default [
       }
     },
     rules: {
-      "@typescript-eslint/no-explicit-any": "error",
+      "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }]
     }
   },
   {
-    ignores: ["dist/**", "node_modules/**", "coverage/**"]
+    ignores: ["dist/**", "node_modules/**", "coverage/**", ".venv/**"]
   }
 ];

@@ -53,4 +53,17 @@ export class WorkspaceBrowser {
         isDirectory: entry.isDirectory()
       }));
   }
+
+  async createFolder(rootId: string, relativePath: string, folderName: string): Promise<string> {
+    const parent = this.resolve(rootId, relativePath);
+    const target = path.join(parent, folderName);
+    const root = this.roots.find((candidate) => candidate.id === rootId)!;
+    const rootPath = path.resolve(root.path);
+    const relative = path.relative(rootPath, target);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+      throw new WorkspaceError("Requested path escapes the approved workspace root.", "PATH_TRAVERSAL");
+    }
+    await import("node:fs/promises").then(fs => fs.mkdir(target, { recursive: true }));
+    return relative;
+  }
 }

@@ -74,6 +74,22 @@ export class PairingManager {
     };
   }
 
+  getActiveSessionMetadata() {
+    const now = this.now();
+    for (const record of this.sessions.values()) {
+      if (record.expiresAt.getTime() > now.getTime() && !record.consumedAt) {
+        return {
+          sessionId: record.sessionId,
+          address: record.address,
+          bridgeFingerprint: record.bridgeFingerprint,
+          bridgeVersion: record.bridgeVersion,
+          expiresAt: record.expiresAt.toISOString()
+        };
+      }
+    }
+    throw new PairingError("No active pairing session was found.", "PAIRING_NOT_FOUND");
+  }
+
   async trustDevice(request: TrustDeviceRequest): Promise<TrustResult> {
     const record = this.sessions.get(request.sessionId);
     if (!record) {

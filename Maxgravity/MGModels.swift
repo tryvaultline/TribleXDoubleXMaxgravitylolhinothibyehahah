@@ -1,11 +1,57 @@
 import Foundation
 
-enum Route: Hashable {
+enum Route: Hashable, Codable {
     case chat(chatID: String)
     case taskDetail(chatID: String, segment: MGTaskDetailSegment)
     case codeViewer(fileRef: String)
     case diffViewer(fileRef: String)
+
+    enum CodingKeys: String, CodingKey {
+        case type, chatID, segment, fileRef
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(String.self, forKey: .type)
+        switch type {
+        case "chat":
+            let chatID = try container.decode(String.self, forKey: .chatID)
+            self = .chat(chatID: chatID)
+        case "taskDetail":
+            let chatID = try container.decode(String.self, forKey: .chatID)
+            let segment = try container.decode(MGTaskDetailSegment.self, forKey: .segment)
+            self = .taskDetail(chatID: chatID, segment: segment)
+        case "codeViewer":
+            let fileRef = try container.decode(String.self, forKey: .fileRef)
+            self = .codeViewer(fileRef: fileRef)
+        case "diffViewer":
+            let fileRef = try container.decode(String.self, forKey: .fileRef)
+            self = .diffViewer(fileRef: fileRef)
+        default:
+            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Unknown route type")
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .chat(let chatID):
+            try container.encode("chat", forKey: .type)
+            try container.encode(chatID, forKey: .chatID)
+        case .taskDetail(let chatID, let segment):
+            try container.encode("taskDetail", forKey: .type)
+            try container.encode(chatID, forKey: .chatID)
+            try container.encode(segment, forKey: .segment)
+        case .codeViewer(let fileRef):
+            try container.encode("codeViewer", forKey: .type)
+            try container.encode(fileRef, forKey: .fileRef)
+        case .diffViewer(let fileRef):
+            try container.encode("diffViewer", forKey: .type)
+            try container.encode(fileRef, forKey: .fileRef)
+        }
+    }
 }
+
 
 enum MGSheetDestination: Hashable, Identifiable {
     case connectionInfo
@@ -79,7 +125,7 @@ enum MGPermissionMode: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-enum MGConnectionQuality: String, CaseIterable, Identifiable {
+enum MGConnectionQuality: String, CaseIterable, Identifiable, Codable {
     case excellent
     case good
     case fair
@@ -97,7 +143,7 @@ enum MGConnectionQuality: String, CaseIterable, Identifiable {
     }
 }
 
-enum MGTaskDetailSegment: String, CaseIterable, Identifiable, Hashable {
+enum MGTaskDetailSegment: String, CaseIterable, Identifiable, Codable, Hashable {
     case files = "Files"
     case changes = "Changes"
     case commands = "Commands"
@@ -105,14 +151,14 @@ enum MGTaskDetailSegment: String, CaseIterable, Identifiable, Hashable {
     var id: String { rawValue }
 }
 
-enum MGActivityTone: Hashable {
+enum MGActivityTone: String, Codable, Hashable {
     case neutral
     case good
     case warning
     case critical
 }
 
-enum MGArtifactKind: String, Hashable {
+enum MGArtifactKind: String, Codable, Hashable {
     case file
     case diff
     case command
@@ -121,12 +167,12 @@ enum MGArtifactKind: String, Hashable {
     case completion
 }
 
-enum MGMessageRole: Hashable {
+enum MGMessageRole: String, Codable, Hashable {
     case user
     case assistant
 }
 
-enum MGCapabilityState: String, CaseIterable, Hashable {
+enum MGCapabilityState: String, CaseIterable, Codable, Hashable {
     case live
     case partial
     case mock
@@ -146,7 +192,7 @@ enum MGCapabilityState: String, CaseIterable, Hashable {
     }
 }
 
-struct MGBridgeCapability: Identifiable, Hashable {
+struct MGBridgeCapability: Identifiable, Codable, Hashable {
     let id: String
     let title: String
     let state: MGCapabilityState
@@ -154,20 +200,22 @@ struct MGBridgeCapability: Identifiable, Hashable {
 }
 
 struct MGPairingQRCodePayload: Hashable, Codable {
+    let sessionId: String
     let address: String
     let token: String
-    let desktopFingerprint: String
+    let bridgeFingerprint: String
     let expiresAt: Date
+    let bridgeVersion: String
 }
 
-struct MGTrustedDevice: Identifiable, Hashable {
+struct MGTrustedDevice: Identifiable, Codable, Hashable {
     let id: String
     let name: String
     let addedAt: Date
     let fingerprint: String
 }
 
-struct MGComputerStatus: Identifiable, Hashable {
+struct MGComputerStatus: Identifiable, Codable, Hashable {
     let id: String
     var computerName: String
     var isOnline: Bool
@@ -180,7 +228,7 @@ struct MGComputerStatus: Identifiable, Hashable {
     var liveBridge: MGCapabilityState
 }
 
-struct MGModelOption: Identifiable, Hashable {
+struct MGModelOption: Identifiable, Codable, Hashable {
     let id: String
     let title: String
     let subtitle: String?
@@ -188,7 +236,7 @@ struct MGModelOption: Identifiable, Hashable {
     let availability: MGCapabilityState
 }
 
-struct MGTaskContext: Hashable {
+struct MGTaskContext: Codable, Hashable {
     var workingFolder: String
     var permissionMode: MGPermissionMode
     var planMode: Bool
@@ -196,28 +244,28 @@ struct MGTaskContext: Hashable {
     var mentionedFiles: [String]
 }
 
-struct MGTaskDraft: Hashable {
+struct MGTaskDraft: Codable, Hashable {
     var title: String
     var prompt: String
     var spaceID: String
     var context: MGTaskContext
 }
 
-struct MGDiffStat: Hashable {
+struct MGDiffStat: Codable, Hashable {
     let fileName: String
     let added: Int
     let removed: Int
     let modified: Int
 }
 
-struct MGArtifactSummary: Identifiable, Hashable {
+struct MGArtifactSummary: Identifiable, Codable, Hashable {
     let id: String
     let kind: MGArtifactKind
     let title: String
     let detail: String
 }
 
-struct MGCommandRun: Identifiable, Hashable {
+struct MGCommandRun: Identifiable, Codable, Hashable {
     let id: String
     let command: String
     let result: String
@@ -225,7 +273,7 @@ struct MGCommandRun: Identifiable, Hashable {
     let output: String
 }
 
-struct MGActivityEvent: Identifiable, Hashable {
+struct MGActivityEvent: Identifiable, Codable, Hashable {
     let id: String
     let title: String
     let detail: String
@@ -234,7 +282,7 @@ struct MGActivityEvent: Identifiable, Hashable {
     let isComplete: Bool
 }
 
-struct MGApprovalRequest: Identifiable, Hashable {
+struct MGApprovalRequest: Identifiable, Codable, Hashable {
     let id: String
     let title: String
     let summary: String
@@ -242,7 +290,7 @@ struct MGApprovalRequest: Identifiable, Hashable {
     let affectedItems: [String]
 }
 
-struct MGCompletionSummary: Hashable {
+struct MGCompletionSummary: Codable, Hashable {
     let summary: String
     let filesChanged: Int
     let linesAdded: Int
@@ -252,7 +300,7 @@ struct MGCompletionSummary: Hashable {
     let fullReply: String
 }
 
-struct MGThreadMessage: Identifiable, Hashable {
+struct MGThreadMessage: Identifiable, Codable, Hashable {
     let id: String
     let role: MGMessageRole
     let body: String
@@ -261,7 +309,7 @@ struct MGThreadMessage: Identifiable, Hashable {
     let attachments: [MGArtifactSummary]
 }
 
-struct MGTaskThread: Hashable {
+struct MGTaskThread: Codable, Hashable {
     let id: String
     var title: String
     var stateText: String
@@ -275,7 +323,7 @@ struct MGTaskThread: Hashable {
     var completion: MGCompletionSummary?
 }
 
-struct MGChatSummary: Identifiable, Hashable {
+struct MGChatSummary: Identifiable, Codable, Hashable {
     let id: String
     var title: String
     var lastActivity: Date
@@ -284,7 +332,7 @@ struct MGChatSummary: Identifiable, Hashable {
     var thread: MGTaskThread
 }
 
-struct MGSpaceSummary: Identifiable, Hashable {
+struct MGSpaceSummary: Identifiable, Codable, Hashable {
     let id: String
     var name: String
     var chats: [MGChatSummary]
@@ -292,7 +340,7 @@ struct MGSpaceSummary: Identifiable, Hashable {
     var statusText: String?
 }
 
-struct MGScheduledTask: Identifiable, Hashable {
+struct MGScheduledTask: Identifiable, Codable, Hashable {
     let id: String
     var title: String
     var spaceName: String
@@ -303,13 +351,13 @@ struct MGScheduledTask: Identifiable, Hashable {
     var model: String
 }
 
-struct MGActivityBucket: Identifiable, Hashable {
+struct MGActivityBucket: Identifiable, Codable, Hashable {
     let id: String
     let title: String
     let items: [MGActivityListItem]
 }
 
-struct MGActivityListItem: Identifiable, Hashable {
+struct MGActivityListItem: Identifiable, Codable, Hashable {
     let id: String
     let title: String
     let detail: String
@@ -317,7 +365,7 @@ struct MGActivityListItem: Identifiable, Hashable {
     let route: Route?
 }
 
-struct MGRemoteFileNode: Identifiable, Hashable {
+struct MGRemoteFileNode: Identifiable, Codable, Hashable {
     let id: String
     let name: String
     let path: String
@@ -329,7 +377,7 @@ struct MGRemoteFileNode: Identifiable, Hashable {
     }
 }
 
-struct MGNotificationPreferences: Hashable {
+struct MGNotificationPreferences: Codable, Hashable {
     var taskCompleted = true
     var approvalRequired = true
     var connectionLost = true

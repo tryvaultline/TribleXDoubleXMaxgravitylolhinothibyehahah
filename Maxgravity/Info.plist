@@ -37,5 +37,9 @@
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Maxgravity needs camera access to scan the desktop bridge pairing QR code.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Maxgravity needs local network access to connect to your computer's local bridge.</string>
 </dict>
 </plist>

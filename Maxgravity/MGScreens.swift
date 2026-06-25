@@ -1151,46 +1151,341 @@ struct MGScheduleTaskSheet: View {
 }
 
 struct MGPairingCodeSheet: View {
+    @Environment(MGAppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
-    @State private var pairingCode = "MG-8491"
-    @State private var statusMessage = "Manual code entry is scaffolded. Complete trust confirmation requires the running Windows bridge."
-
+    
+    enum ScreenState {
+        case scanner
+        case manualEntry
+        case confirmation(payload: MGPairingQRCodePayload)
+        case loading(message: String)
+        case success
+        case error(message: String)
+    }
+    
+    @State private var state: ScreenState = .scanner
+    @State private var ipAddress = ""
+    @State private var pairingToken = ""
+    
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                MGBrandMark(size: 40)
-                Text("Enter pairing code")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(MGTheme.primaryText)
-                Text("Use a code shown by the local Maxgravity Bridge on your computer.")
-                    .font(.subheadline)
+            ZStack {
+                MGAppBackground()
+                
+                switch state {
+                case .scanner:
+                    scannerView
+                case .manualEntry:
+                    manualEntryView
+                case .confirmation(let payload):
+                    confirmationView(payload)
+                case .loading(let msg):
+                    loadingView(msg)
+                case .success:
+                    successView
+                case .error(let msg):
+                    errorView(msg)
+                }
+            }
+            .navigationTitle("Pairing Setup")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .buttonStyle(.plain)
                     .foregroundStyle(MGTheme.secondaryText)
-                TextField("Pairing code", text: $pairingCode)
+                }
+                
+                if case .scanner = state {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Enter Code") {
+                            state = .manualEntry
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(MGTheme.primaryText)
+                    }
+                } else if case .manualEntry = state {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Scan QR") {
+                            state = .scanner
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(MGTheme.primaryText)
+                    }
+                }
+            }
+        }
+    }
+    
+    private var scannerView: some View {
+        VStack(spacing: 20) {
+            Text("Scan QR Code")
+                .font(.headline)
+                .foregroundStyle(MGTheme.primaryText)
+                .padding(.top, 16)
+            
+            Text("Open the pairing setup page on your computer and scan the QR code displayed.")
+                .font(.caption)
+                .foregroundStyle(MGTheme.secondaryText)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 20)
+            
+            ZStack {
+                MGCameraScannerView { scannedCode in
+                    MGHaptics.selection()
+                    
+                    if let data = scannedCode.data(using: .utf8),
+                       let payload = try? JSONDecoder().decode(MGPairingQRCodePayload.self, from: data) {
+                        self.state = .confirmation(payload: payload)
+                    } else {
+                        self.state = .error(message: "Invalid QR code payload format.")
+                    }
+                } onError: { errMsg in
+                    self.state = .error(message: "Camera Error: \(errMsg)")
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 24))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24)
+                        .stroke(MGTheme.border, lineWidth: 1)
+                )
+                .frame(height: 320)
+                .padding(16)
+            }
+            
+            Spacer()
+        }
+    }
+    
+    private var manualEntryView: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Enter Pairing Code Manually")
+                .font(.headline)
+                .foregroundStyle(MGTheme.primaryText)
+                .padding(.top, 16)
+            
+            Text("Enter the computer IP/address and the pairing code shown on your desktop screen.")
+                .font(.caption)
+                .foregroundStyle(MGTheme.secondaryText)
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Computer IP Address")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(MGTheme.secondaryText)
+                
+                TextField("e.g. 192.168.1.18", text: $ipAddress)
+                    .keyboardType(.numbersAndPunctuation)
+                    .textInputAutocapitalization(.never)
+                    .padding(14)
+                    .mgReadableSurface(cornerRadius: 18)
+            }
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Pairing Code")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(MGTheme.secondaryText)
+                
+                TextField("e.g. MG-7K4Q-98N1", text: $pairingToken)
                     .textInputAutocapitalization(.characters)
                     .padding(14)
                     .mgReadableSurface(cornerRadius: 18)
-                Text(statusMessage)
-                    .font(.footnote)
-                    .foregroundStyle(MGTheme.warning)
-                MGPrimaryActionButton(title: "Check pairing code") {
-                    statusMessage = "Partial: bridge pairing endpoints are implemented, but this iOS build still needs camera scan, Keychain storage, and desktop trust confirmation before it can connect."
-                    MGHaptics.warning()
+            }
+            
+            Spacer()
+            
+            MGPrimaryActionButton(title: "Connect", icon: "arrow.right.circle.fill") {
+                Task {
+                    await fetchManualSession()
                 }
-                Button("Close") {
-                    dismiss()
+            }
+        }
+        .padding(20)
+    }
+    
+    private func fetchManualSession() async {
+        state = .loading(message: "Fetching pairing details from bridge...")
+        
+        let cleanedIp = ipAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedToken = pairingToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        guard !cleanedIp.isEmpty, !normalizedToken.isEmpty else {
+            state = .error(message: "IP address and pairing code cannot be empty.")
+            return
+        }
+        
+        let targetUrlStr = "http://\(cleanedIp):59443/v1/connection/active-session"
+        guard let url = URL(string: targetUrlStr) else {
+            state = .error(message: "Invalid bridge IP address.")
+            return
+        }
+        
+        do {
+            let request = URLRequest(url: url)
+            let session = URLSession(configuration: .default, delegate: MGTrustAllCertsDelegate(), delegateQueue: nil)
+            let (data, response) = try await session.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                state = .error(message: "Bridge not found at this IP address. Ensure the bridge is running.")
+                return
+            }
+            
+            struct TempMetadata: Codable {
+                let sessionId: String
+                let address: String
+                let bridgeFingerprint: String
+                let expiresAt: String
+                let bridgeVersion: String
+            }
+            
+            let meta = try JSONDecoder().decode(TempMetadata.self, from: data)
+            
+            let df = ISO8601DateFormatter()
+            let expiryDate = df.date(from: meta.expiresAt) ?? Date().addingTimeInterval(300)
+            
+            let payload = MGPairingQRCodePayload(
+                sessionId: meta.sessionId,
+                address: meta.address,
+                token: normalizedToken,
+                bridgeFingerprint: meta.bridgeFingerprint,
+                expiresAt: expiryDate,
+                bridgeVersion: meta.bridgeVersion
+            )
+            
+            state = .confirmation(payload: payload)
+        } catch {
+            state = .error(message: "Connection failed: \(error.localizedDescription)")
+        }
+    }
+    
+    private func confirmationView(_ payload: MGPairingQRCodePayload) -> some View {
+        VStack(alignment: .leading, spacing: 24) {
+            MGBrandMark(size: 48)
+                .padding(.top, 16)
+            
+            Text("Confirm Connection")
+                .font(.title2.weight(.bold))
+                .foregroundStyle(MGTheme.primaryText)
+            
+            Text("Verify the desktop fingerprint matches what is shown on your screen before proceeding.")
+                .font(.body)
+                .foregroundStyle(MGTheme.secondaryText)
+            
+            VStack(alignment: .leading, spacing: 14) {
+                labeledField("Address", value: payload.address)
+                Divider().overlay(MGTheme.border)
+                labeledField("Desktop Fingerprint", value: payload.bridgeFingerprint)
+                Divider().overlay(MGTheme.border)
+                labeledField("Protocol Version", value: payload.bridgeVersion)
+            }
+            .padding(18)
+            .mgReadableSurface(cornerRadius: 24)
+            
+            Spacer()
+            
+            VStack(spacing: 12) {
+                MGPrimaryActionButton(title: "Connect & Trust Computer", icon: "lock.shield.fill") {
+                    Task {
+                        await performPairing(payload)
+                    }
+                }
+                
+                Button("Cancel") {
+                    state = .scanner
                 }
                 .font(.body.weight(.semibold))
                 .foregroundStyle(MGTheme.primaryText)
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .buttonStyle(MGPressableButtonStyle())
                 .mgInteractiveGlass(cornerRadius: 22)
-                Spacer()
             }
-            .padding(20)
-            .background(MGAppBackground())
-            .navigationTitle("Pairing")
-            .navigationBarTitleDisplayMode(.inline)
         }
+        .padding(20)
+    }
+    
+    private func performPairing(_ payload: MGPairingQRCodePayload) async {
+        state = .loading(message: "Confirming trust and pairing device...")
+        do {
+            try await appModel.pair(payload: payload, name: UIDevice.current.name)
+            state = .success
+            MGHaptics.success()
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                dismiss()
+            }
+        } catch {
+            state = .error(message: "Pairing failed: \(error.localizedDescription)")
+            MGHaptics.warning()
+        }
+    }
+    
+    private func labeledField(_ label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(MGTheme.secondaryText)
+            Text(value)
+                .font(.subheadline.monospaced())
+                .foregroundStyle(MGTheme.primaryText)
+        }
+    }
+    
+    private func loadingView(_ message: String) -> some View {
+        VStack(spacing: 18) {
+            ProgressView()
+                .scaleEffect(1.3)
+                .tint(.white)
+            Text(message)
+                .font(.body)
+                .foregroundStyle(MGTheme.primaryText)
+                .multilineTextAlignment(.center)
+        }
+        .padding(40)
+        .mgInteractiveGlass(cornerRadius: 28)
+    }
+    
+    private var successView: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 64))
+                .foregroundStyle(MGTheme.success)
+            Text("Computer Paired Successfully")
+                .font(.headline)
+                .foregroundStyle(MGTheme.primaryText)
+            Text("Maxgravity is now linked to your computer.")
+                .font(.caption)
+                .foregroundStyle(MGTheme.secondaryText)
+        }
+        .padding(40)
+        .mgInteractiveGlass(cornerRadius: 28)
+    }
+    
+    private func errorView(_ message: String) -> some View {
+        VStack(spacing: 18) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 54))
+                .foregroundStyle(MGTheme.warning)
+            Text("Pairing Failed")
+                .font(.headline)
+                .foregroundStyle(MGTheme.primaryText)
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(MGTheme.secondaryText)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 10)
+            
+            Button("Try Again") {
+                state = .scanner
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(MGTheme.primaryText)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+            .mgInteractiveGlass(cornerRadius: 16)
+        }
+        .padding(32)
+        .mgReadableSurface(cornerRadius: 28)
+        .padding(20)
     }
 }
 

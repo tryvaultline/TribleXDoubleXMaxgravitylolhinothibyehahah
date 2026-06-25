@@ -11,7 +11,12 @@
     "lint": "eslint .",
     "test": "vitest run",
     "security:audit": "npm audit --audit-level=high",
-    "secret-scan": "node scripts/secret-scan.mjs"
+    "secret-scan": "node scripts/secret-scan.mjs",
+    "bridge:pair": "tsx src/pair-tool.ts pair",
+    "bridge:status": "tsx src/pair-tool.ts status",
+    "bridge:stop": "tsx src/pair-tool.ts stop",
+    "bridge:devices": "tsx src/pair-tool.ts devices",
+    "bridge:revoke-device": "tsx src/pair-tool.ts revoke"
   },
   "dependencies": {
     "@fastify/websocket": "^11.2.0",

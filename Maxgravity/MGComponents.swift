@@ -21,17 +21,9 @@ struct MGBrandWordmark: View {
     var compact: Bool = false
 
     var body: some View {
-        if let image = UIImage(named: "MaxgravityWordmark") {
-            Image(uiImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(height: compact ? 22 : 28)
-                .accessibilityLabel("Maxgravity")
-        } else {
-            Text("Maxgravity")
-                .font(compact ? .headline.weight(.semibold) : .title3.weight(.bold))
-                .foregroundStyle(MGTheme.primaryText)
-        }
+        Text("Maxgravity")
+            .font(compact ? .headline.weight(.semibold) : .title3.weight(.bold))
+            .foregroundStyle(MGTheme.primaryText)
     }
 }
 

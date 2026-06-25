@@ -853,9 +853,9 @@ final class MGAppModel {
                     delivered: true,
                     attachments: []
                 )
-                spaces[spaceIndex].chats[spaceIndex].chats[chatIndex].thread.messages.append(message)
-                spaces[spaceIndex].chats[spaceIndex].chats[chatIndex].thread.approval = nil
-                spaces[spaceIndex].chats[spaceIndex].chats[chatIndex].lastActivity = .now
+                spaces[spaceIndex].chats[chatIndex].thread.messages.append(message)
+                spaces[spaceIndex].chats[chatIndex].thread.approval = nil
+                spaces[spaceIndex].chats[chatIndex].lastActivity = Date()
                 
                 Task {
                     try? await bridge.sendMessage(taskId: chatId, prompt: guidance, workspaceRoot: draftContext.workingFolder)

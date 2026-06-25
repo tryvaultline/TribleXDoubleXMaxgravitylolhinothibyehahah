@@ -17,6 +17,7 @@
 		0A100008B1C1D1E1F1A10001 /* FloatingPanel in Frameworks */ = {isa = PBXBuildFile; productRef = 0A100091B1C1D1E1F1A10001 /* FloatingPanel */; };
 		0A100009B1C1D1E1F1A10001 /* LiquidGlassKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0A100092B1C1D1E1F1A10001 /* LiquidGlassKit */; };
 		0A10000AB1C1D1E1F1A10001 /* MGPrivateAPIGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A100019B1C1D1E1F1A10001 /* MGPrivateAPIGuard.swift */; };
+		0A10000BB1C1D1E1F1A10001 /* MGCameraScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A10001BB1C1D1E1F1A10001 /* MGCameraScanner.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -30,6 +31,7 @@
 		0A100017B1C1D1E1F1A10001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0A100018B1C1D1E1F1A10001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		0A100019B1C1D1E1F1A10001 /* MGPrivateAPIGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MGPrivateAPIGuard.swift; sourceTree = "<group>"; };
+		0A10001BB1C1D1E1F1A10001 /* MGCameraScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MGCameraScanner.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -63,6 +65,7 @@
 				0A100015B1C1D1E1F1A10001 /* MGComponents.swift */,
 				0A100016B1C1D1E1F1A10001 /* MGScreens.swift */,
 				0A100019B1C1D1E1F1A10001 /* MGPrivateAPIGuard.swift */,
+				0A10001BB1C1D1E1F1A10001 /* MGCameraScanner.swift */,
 				0A100017B1C1D1E1F1A10001 /* Assets.xcassets */,
 				0A100018B1C1D1E1F1A10001 /* Info.plist */,
 			);
@@ -161,6 +164,7 @@
 				0A100005B1C1D1E1F1A10001 /* MGComponents.swift in Sources */,
 				0A100006B1C1D1E1F1A10001 /* MGScreens.swift in Sources */,
 				0A10000AB1C1D1E1F1A10001 /* MGPrivateAPIGuard.swift in Sources */,
+				0A10000BB1C1D1E1F1A10001 /* MGCameraScanner.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

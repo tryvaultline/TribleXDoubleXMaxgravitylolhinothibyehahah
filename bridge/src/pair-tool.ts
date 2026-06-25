@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
+import { AntigravityCliAccountAdapter } from "./antigravity-adapter.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(here, "..", "..");
@@ -41,7 +42,8 @@ async function startBridge(): Promise<void> {
   }
 
   console.log("Starting Maxgravity Bridge...");
-  const child = spawn("npm", ["run", "dev"], {
+  const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+  const child = spawn(npmCmd, ["run", "dev"], {
     cwd: join(projectRoot, "bridge"),
     detached: true,
     stdio: "ignore"
@@ -207,6 +209,60 @@ async function pair() {
   }
 }
 
+async function doctor() {
+  console.log("=== Maxgravity Bridge Doctor ===");
+  
+  const adapter = new AntigravityCliAccountAdapter();
+  const agentApiBat = "C:\\Users\\kuroi\\.gemini\\antigravity\\bin\\agentapi.bat";
+  const cliInstalled = existsSync(agentApiBat);
+  console.log(`Antigravity CLI: ${cliInstalled ? "Installed" : "Missing"}`);
+  
+  let authenticated = false;
+  if (cliInstalled) {
+    const session = adapter.discoverSession();
+    if (session.token && session.address) {
+      try {
+        const { execSync } = await import("node:child_process");
+        execSync(`"${agentApiBat}" get-conversation-metadata dummy-id`, {
+          env: {
+            ...process.env,
+            ANTIGRAVITY_LS_ADDRESS: session.address,
+            ANTIGRAVITY_CSRF_TOKEN: session.token
+          },
+          stdio: ["ignore", "pipe", "pipe"]
+        });
+        authenticated = true;
+      } catch (err: any) {
+        const errOutput = err.stdout?.toString() || err.stderr?.toString() || err.message || "";
+        if (errOutput.includes("trajectory not found")) {
+          authenticated = true;
+        }
+      }
+    }
+  }
+  console.log(`Local Account Authentication: ${authenticated ? "Authenticated" : "Not Authenticated"}`);
+  
+  const running = await isBridgeRunning();
+  console.log(`Bridge Status: ${running ? "Online" : "Offline"}`);
+  
+  const pkgPath = join(projectRoot, "bridge", "package.json");
+  let version = "0.1.0";
+  if (existsSync(pkgPath)) {
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+    version = pkg.version || "0.1.0";
+  }
+  console.log(`Bridge Version: ${version}`);
+  
+  const workspaceAccessible = existsSync(projectRoot);
+  console.log(`Workspace Access Status: ${workspaceAccessible ? "Accessible (Approved)" : "Inaccessible"}`);
+  
+  console.log(`QR Readiness: ${running ? "Ready" : "Not Ready (Start the bridge first)"}`);
+  console.log("API Key: No API key required");
+  console.log("================================");
+  
+  adapter.stop();
+}
+
 async function status() {
   const running = await isBridgeRunning();
   if (running) {
@@ -292,6 +348,10 @@ const cmd = args[0] || "pair";
 
 if (cmd === "pair") {
   pair();
+} else if (cmd === "doctor") {
+  doctor();
+} else if (cmd === "start") {
+  startBridge();
 } else if (cmd === "status") {
   status();
 } else if (cmd === "stop") {

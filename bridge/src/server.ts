@@ -7,7 +7,7 @@ import { TrustDeviceRequestSchema, WorkspaceRoot } from "./schemas.js";
 import { MemoryTrustStore, TrustStore } from "./trust-store.js";
 import { redactSensitive } from "./redaction.js";
 import { WorkspaceBrowser, WorkspaceError } from "./workspace.js";
-import { AntigravityAdapter, PythonSidecarAdapter, UnsupportedCapabilityError } from "./antigravity-adapter.js";
+import { AntigravityAdapter, AntigravityCliAccountAdapter, UnsupportedCapabilityError } from "./antigravity-adapter.js";
 
 interface BuildServerOptions {
   trustStore?: TrustStore;
@@ -20,7 +20,7 @@ interface BuildServerOptions {
 
 export async function buildServer(options: BuildServerOptions = {}): Promise<FastifyInstance> {
   const trustStore = options.trustStore ?? new MemoryTrustStore();
-  const adapter = options.adapter ?? new PythonSidecarAdapter();
+  const adapter = options.adapter ?? new AntigravityCliAccountAdapter();
   const browser = new WorkspaceBrowser(options.workspaceRoots ?? []);
   const pairing = new PairingManager(trustStore, {
     address: options.address ?? "wss://127.0.0.1:59443",
@@ -144,7 +144,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     const roots = browser.listRoots();
     const spaces = [];
     for (const root of roots) {
-      const chats = await (adapter as PythonSidecarAdapter).listConversations(root.id).catch(() => []);
+      const chats = await (adapter as AntigravityCliAccountAdapter).listConversations(root.id).catch(() => []);
       const mapped = chats.map(mapConversation);
       spaces.push({
         id: root.id,
@@ -164,10 +164,10 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     }
     const body = request.body as any;
     const { spaceId, title, prompt, workspaceRoot } = body;
-    const apiKey = parseBearer(request.headers.authorization);
     
-    const conv = await (adapter as PythonSidecarAdapter).createConversation(spaceId, title || "New task");
-    await (adapter as PythonSidecarAdapter).chat(conv.conversationId, prompt, workspaceRoot, apiKey);
+
+    const conv = await (adapter as AntigravityCliAccountAdapter).createConversation(spaceId, title || "New task");
+    await (adapter as AntigravityCliAccountAdapter).chat(conv.conversationId, prompt, workspaceRoot);
     return conv;
   });
 
@@ -178,9 +178,9 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     }
     const body = request.body as any;
     const { prompt, workspaceRoot } = body;
-    const apiKey = parseBearer(request.headers.authorization);
     
-    await (adapter as PythonSidecarAdapter).chat(request.params.taskId, prompt, workspaceRoot, apiKey);
+
+    await (adapter as AntigravityCliAccountAdapter).chat(request.params.taskId, prompt, workspaceRoot);
     return { status: "sent" };
   });
 
@@ -189,7 +189,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     if (!auth) {
       return;
     }
-    const chats = await (adapter as PythonSidecarAdapter).listConversations().catch(() => []);
+    const chats = await (adapter as AntigravityCliAccountAdapter).listConversations().catch(() => []);
     const chat = chats.find((c: any) => c.id === request.params.taskId);
     if (!chat) {
       return reply.code(404).send({ error: "CHAT_NOT_FOUND" });
@@ -206,7 +206,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
       
       const taskId = (request.params as { taskId: string }).taskId;
       
-      const unsubscribe = (adapter as PythonSidecarAdapter).onEvent((event: any) => {
+      const unsubscribe = (adapter as AntigravityCliAccountAdapter).onEvent((event: any) => {
         if (event.taskId === taskId) {
           socket.send(JSON.stringify(redactSensitive(event)));
         }

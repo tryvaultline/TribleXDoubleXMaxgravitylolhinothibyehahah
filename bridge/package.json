@@ -12,6 +12,8 @@
     "test": "vitest run",
     "security:audit": "npm audit --audit-level=high",
     "secret-scan": "node scripts/secret-scan.mjs",
+    "bridge:doctor": "tsx src/pair-tool.ts doctor",
+    "bridge:start": "tsx src/pair-tool.ts start",
     "bridge:pair": "tsx src/pair-tool.ts pair",
     "bridge:status": "tsx src/pair-tool.ts status",
     "bridge:stop": "tsx src/pair-tool.ts stop",

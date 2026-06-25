@@ -14,10 +14,18 @@ const trustStorePath = process.env.MAXGRAVITY_TRUST_STORE ?? join(localDir, "tru
 const port = Number(process.env.MAXGRAVITY_BRIDGE_PORT ?? "59443");
 const host = process.env.MAXGRAVITY_BRIDGE_HOST ?? "127.0.0.1";
 
+const projectRoot = join(here, "..", "..");
 const server = await buildServer({
   trustStore: new FileTrustStore(trustStorePath),
   address: `wss://${host}:${port}`,
-  bridgeVersion: "0.1.0"
+  bridgeVersion: "0.1.0",
+  workspaceRoots: [
+    {
+      id: "maxgravity-project",
+      name: "Maxgravity Workspace",
+      path: projectRoot
+    }
+  ]
 });
 
 await server.listen({ port, host });

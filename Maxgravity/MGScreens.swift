@@ -1232,16 +1232,15 @@ struct MGPairingCodeSheet: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 20)
             
-            ZStack {
-                MGCameraScannerView { scannedCode in
-                    MGHaptics.selection()
-                    
-                    if let data = scannedCode.data(using: .utf8),
-                       let payload = try? JSONDecoder.mgDecoder.decode(MGPairingQRCodePayload.self, from: data) {
-                        self.state = .confirmation(payload: payload)
-                    } else {
-                        self.state = .error(message: "Invalid QR code payload format.")
-                    }
+             ZStack {
+                 MGCameraScannerView { scannedCode in
+                     MGHaptics.selection()
+                     
+                    if let payload = decodePairingPayload(from: scannedCode) {
+                         self.state = .confirmation(payload: payload)
+                     } else {
+                         self.state = .error(message: "Invalid QR code payload format.")
+                     }
                 } onError: { errMsg in
                     self.state = .error(message: "Camera Error: \(errMsg)")
                 }
@@ -1361,6 +1360,50 @@ struct MGPairingCodeSheet: View {
         } catch {
             state = .error(message: "Connection failed: \(error.localizedDescription)")
         }
+    }
+
+    private func decodePairingPayload(from scannedCode: String) -> MGPairingQRCodePayload? {
+        let trimmed = scannedCode.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let data = trimmed.data(using: .utf8),
+           let payload = try? JSONDecoder.mgDecoder.decode(MGPairingQRCodePayload.self, from: data) {
+            return payload
+        }
+
+        if let url = URL(string: trimmed),
+           let components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            if let payloadItem = components.queryItems?.first(where: { $0.name == "payload" })?.value {
+                if let decoded = decodePayloadString(payloadItem) {
+                    return decoded
+                }
+            }
+
+            if let jsonItem = components.queryItems?.first(where: { $0.name == "json" })?.value {
+                if let decoded = decodePayloadString(jsonItem) {
+                    return decoded
+                }
+            }
+        }
+
+        return nil
+    }
+
+    private func decodePayloadString(_ value: String) -> MGPairingQRCodePayload? {
+        let candidates = [value, value.removingPercentEncoding ?? value]
+
+        for candidate in candidates {
+            if let data = candidate.data(using: .utf8),
+               let payload = try? JSONDecoder.mgDecoder.decode(MGPairingQRCodePayload.self, from: data) {
+                return payload
+            }
+
+            if let data = Data(base64Encoded: candidate),
+               let payload = try? JSONDecoder.mgDecoder.decode(MGPairingQRCodePayload.self, from: data) {
+                return payload
+            }
+        }
+
+        return nil
     }
     
     private func confirmationView(_ payload: MGPairingQRCodePayload) -> some View {

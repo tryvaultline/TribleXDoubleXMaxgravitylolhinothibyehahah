@@ -31,7 +31,7 @@ const localIp = getLocalIp();
 const projectRoot = join(here, "..", "..");
 const server = await buildServer({
   trustStore: new FileTrustStore(trustStorePath),
-  address: `wss://${localIp}:${port}`,
+  address: `ws://${localIp}:${port}`,
   bridgeVersion: "0.1.0",
   workspaceRoots: [
     {

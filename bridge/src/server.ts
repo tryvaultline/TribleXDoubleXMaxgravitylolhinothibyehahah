@@ -23,7 +23,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   const adapter = options.adapter ?? new AntigravityCliAccountAdapter();
   const browser = new WorkspaceBrowser(options.workspaceRoots ?? []);
   const pairing = new PairingManager(trustStore, {
-    address: options.address ?? "wss://127.0.0.1:59443",
+    address: options.address ?? "ws://127.0.0.1:59443",
     bridgeFingerprint: fingerprint(options.address ?? "maxgravity-local-bridge"),
     bridgeVersion: options.bridgeVersion ?? "0.1.0",
     clock: options.clock

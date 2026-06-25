@@ -24,14 +24,16 @@ function getLocalIp(): string {
 }
 
 async function isBridgeRunning(): Promise<boolean> {
-  if (!existsSync(pidFile)) return false;
-  const pid = Number(readFileSync(pidFile, "utf8"));
   try {
-    process.kill(pid, 0); // Check if process exists
-    return true;
+    const response = await fetch(`http://127.0.0.1:${port}/v1/connection/health`);
+    if (response.ok) {
+      const data = await response.json() as any;
+      return data.product === "Maxgravity Bridge";
+    }
   } catch {
-    return false;
+    // Failed to connect means offline
   }
+  return false;
 }
 
 async function startBridge(): Promise<void> {
@@ -42,12 +44,18 @@ async function startBridge(): Promise<void> {
   }
 
   console.log("Starting Maxgravity Bridge...");
-  const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
-  const child = spawn(npmCmd, ["run", "dev"], {
+  const nodePath = process.execPath;
+  const serverIndex = join(projectRoot, "bridge", "dist", "src", "index.js");
+  
+  const child = spawn(nodePath, [serverIndex], {
     cwd: join(projectRoot, "bridge"),
     detached: true,
     stdio: "ignore",
-    shell: process.platform === "win32"
+    shell: false
+  });
+  console.log(`Spawned PID: ${child.pid}`);
+  child.on("error", (err) => {
+    console.error("Failed to start bridge process:", err);
   });
   child.unref();
 
@@ -63,8 +71,9 @@ async function getPairingSession() {
     throw new Error(`Failed to create pairing session: ${response.statusText}`);
   }
   const payload = await response.json() as any;
-  // Override localhost address with real local IP for network accessibility
-  payload.address = `wss://${localIp}:${port}`;
+  // Override localhost address with real local IP for network accessibility.
+  // The bridge currently serves plain HTTP/WebSocket, not TLS.
+  payload.address = `ws://${localIp}:${port}`;
   return payload;
 }
 

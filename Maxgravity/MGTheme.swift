@@ -98,7 +98,13 @@ struct MGLiquidGlassSurface<Content: View>: View {
 
     var body: some View {
         content
-            .background(backgroundShape.fill(reduceTransparency ? MGTheme.elevatedSurface : .ultraThinMaterial))
+            .background {
+                if reduceTransparency {
+                    backgroundShape.fill(MGTheme.elevatedSurface)
+                } else {
+                    backgroundShape.fill(.ultraThinMaterial)
+                }
+            }
             .overlay(backgroundShape.stroke(Color.white.opacity(0.14), lineWidth: 1))
             .shadow(color: MGTheme.shadow, radius: 18, y: 10)
     }
@@ -115,9 +121,9 @@ struct MGAdaptiveSurface<Content: View>: View {
         if #available(iOS 26, *) {
             // Replace this wrapper with official glassEffect/GlassEffectContainer APIs
             // when building on the iOS 26 SDK.
-            MGLiquidGlassSurface(content: content)
+            MGLiquidGlassSurface { content }
         } else {
-            MGClassicDarkSurface(content: content)
+            MGClassicDarkSurface { content }
         }
     }
 }

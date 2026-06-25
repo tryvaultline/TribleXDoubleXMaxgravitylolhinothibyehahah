@@ -276,4 +276,8 @@ struct MGRemoteFileNode: Identifiable, Hashable {
     let path: String
     let isDirectory: Bool
     var children: [MGRemoteFileNode]
+
+    var optionalChildren: [MGRemoteFileNode]? {
+        children.isEmpty ? nil : children
+    }
 }

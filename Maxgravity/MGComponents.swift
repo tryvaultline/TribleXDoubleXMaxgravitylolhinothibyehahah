@@ -729,7 +729,7 @@ struct MGRemoteFolderPicker: View {
 
     var body: some View {
         NavigationStack {
-            List(appModel.remoteRoots, children: \.children) { node in
+            List(appModel.remoteRoots, children: \.optionalChildren) { node in
                 Button {
                     if node.isDirectory {
                         appModel.draftContext.workingFolder = node.path

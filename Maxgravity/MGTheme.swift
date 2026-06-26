@@ -172,65 +172,70 @@ private struct MGInteractiveGlassModifier: ViewModifier {
 
     @ViewBuilder
     private var glassBackground: some View {
-        #if canImport(LiquidGlassKit)
-        MGLiquidGlassRepresentable()
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.08),
-                                MGTheme.elevatedSurface.opacity(0.68),
-                                Color.black.opacity(0.08)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+        if #available(iOS 26.0, *) {
+            Color.clear
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        } else {
+            #if canImport(LiquidGlassKit)
+            MGLiquidGlassRepresentable()
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.08),
+                                    MGTheme.elevatedSurface.opacity(0.68),
+                                    Color.black.opacity(0.08)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
-                    )
-            }
-            .overlay(alignment: .top) {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.white.opacity(0.14), Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
+                }
+                .overlay(alignment: .top) {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.14), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
                         )
-                    )
-                    .frame(height: max(28, cornerRadius))
-                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            }
-        #else
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(.ultraThinMaterial)
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.10),
-                                MGTheme.elevatedSurface.opacity(0.72),
-                                Color.black.opacity(0.10)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+                        .frame(height: max(28, cornerRadius))
+                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                }
+            #else
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.10),
+                                    MGTheme.elevatedSurface.opacity(0.72),
+                                    Color.black.opacity(0.10)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
-                    )
-            }
-            .overlay(alignment: .top) {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.white.opacity(0.18), Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
+                }
+                .overlay(alignment: .top) {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.18), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
                         )
-                    )
-                    .frame(height: max(28, cornerRadius))
-                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            }
-        #endif
+                        .frame(height: max(28, cornerRadius))
+                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                }
+            #endif
+        }
     }
 }
 

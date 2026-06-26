@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { TrustedDevice } from "./schemas.js";
+import { protectForCurrentUser, unprotectForCurrentUser } from "./security/dpapi.js";
 
 export interface TrustStore {
   list(): Promise<TrustedDevice[]>;
@@ -39,12 +40,26 @@ export class FileTrustStore implements TrustStore {
 
   async list(): Promise<TrustedDevice[]> {
     try {
-      return JSON.parse(await readFile(this.filePath, "utf8")) as TrustedDevice[];
+      const data = await readFile(this.filePath, "utf8");
+      const trimmed = data.trim();
+      if (!trimmed) {
+        return [];
+      }
+      // Safe migration check
+      if (trimmed.startsWith("[")) {
+        const devices = JSON.parse(trimmed) as TrustedDevice[];
+        // Migrate to encrypted format
+        await this.write(devices);
+        return devices;
+      }
+      const decrypted = unprotectForCurrentUser(trimmed);
+      return JSON.parse(decrypted) as TrustedDevice[];
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         return [];
       }
-      throw error;
+      console.error("CRITICAL: Failed to read or decrypt trusted devices store:", error);
+      return [];
     }
   }
 
@@ -73,6 +88,8 @@ export class FileTrustStore implements TrustStore {
 
   private async write(devices: TrustedDevice[]): Promise<void> {
     await mkdir(dirname(this.filePath), { recursive: true });
-    await writeFile(this.filePath, JSON.stringify(devices, null, 2), { encoding: "utf8", mode: 0o600 });
+    const plainText = JSON.stringify(devices, null, 2);
+    const encrypted = protectForCurrentUser(plainText);
+    await writeFile(this.filePath, encrypted, { encoding: "utf8", mode: 0o600 });
   }
 }

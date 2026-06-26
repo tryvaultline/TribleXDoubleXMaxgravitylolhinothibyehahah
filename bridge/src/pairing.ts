@@ -90,7 +90,8 @@ export class PairingManager {
       wssPort: endpoint.protocol === "https:" ? Number(endpoint.port) : undefined,
       expiresAt: expiresAt.toISOString(),
       bridgeFingerprint: this.options.bridgeFingerprint,
-      bridgeVersion: this.options.bridgeVersion
+      bridgeVersion: this.options.bridgeVersion,
+      token
     };
   }
 

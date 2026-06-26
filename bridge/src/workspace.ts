@@ -99,6 +99,7 @@ export class WorkspaceBrowser {
 
 function assertSafeLeafName(value: string): void {
   const trimmed = value.trim();
+  // eslint-disable-next-line no-control-regex
   if (!trimmed || trimmed === "." || trimmed === ".." || /[\\/:*?"<>|\u0000-\u001F]/.test(trimmed)) {
     throw new WorkspaceError("File or folder name is invalid.", "INVALID_NAME");
   }

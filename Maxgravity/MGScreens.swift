@@ -375,7 +375,7 @@ struct MGNewTaskView: View {
         MGComposer(
             text: Binding(get: { appModel.draftPrompt }, set: { appModel.draftPrompt = $0 }),
             selectedModel: appModel.draftContext.selectedModel.title,
-            modelOptions: appModel.models,
+            isSending: appModel.isCreatingTask,
             mentionedFiles: appModel.draftContext.mentionedFiles,
             pickedPhotos: appModel.pickedPhotos,
             onRemoveFile: appModel.removeMentionedFile,
@@ -383,7 +383,7 @@ struct MGNewTaskView: View {
             onPlus: { appModel.presentedFullScreen = .plusMenu },
             onSlash: { appModel.presentedSheet = .slashCommands },
             onMention: { appModel.presentedSheet = .fileMentions },
-            onSelectModel: appModel.updateDraftModel,
+            onModelPicker: { appModel.presentedSheet = .modelPicker },
             onMicrophone: {
                 appModel.draftMicrophoneEnabled.toggle()
                 MGHaptics.selection()
@@ -544,7 +544,7 @@ struct MGChatThreadView: View {
         } else {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
-                    MGGoogleAvatar(size: 20)
+                    MGAntigravityAvatar(size: 20)
                     Text("Antigravity")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(MGTheme.secondaryText)
@@ -835,7 +835,7 @@ struct MGSettingsScreenView: View {
 
             MGSettingsGroup(title: "Antigravity account") {
                 HStack(spacing: 14) {
-                    MGGoogleAvatar(size: 44)
+                    MGAntigravityAvatar(size: 44)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Google account")
                             .foregroundStyle(MGTheme.primaryText)
@@ -1925,28 +1925,37 @@ struct MGPairingCodeSheet: View {
 }
 
 #Preview("Spaces") {
-    let model = MGAppModel()
-    model.connectMockComputer()
-    return MGSpacesView()
+    let model = {
+        let m = MGAppModel()
+        m.connectPreviewComputer()
+        return m
+    }()
+    MGSpacesView()
         .environment(model)
         .preferredColorScheme(.dark)
 }
 
 #Preview("New Task") {
-    let model = MGAppModel()
-    model.connectMockComputer()
-    return NavigationStack {
-        MGNewTaskView(spaceID: MGFixtures.spaces[0].id)
+    let model = {
+        let m = MGAppModel()
+        m.connectPreviewComputer()
+        return m
+    }()
+    NavigationStack {
+        MGNewTaskView(spaceID: MGPreviewFixtures.spaces[0].id)
             .environment(model)
     }
     .preferredColorScheme(.dark)
 }
 
 #Preview("Chat") {
-    let model = MGAppModel()
-    model.connectMockComputer()
-    return NavigationStack {
-        MGChatThreadView(chatID: MGFixtures.thread.id)
+    let model = {
+        let m = MGAppModel()
+        m.connectPreviewComputer()
+        return m
+    }()
+    NavigationStack {
+        MGChatThreadView(chatID: MGPreviewFixtures.thread.id)
             .environment(model)
     }
     .preferredColorScheme(.dark)

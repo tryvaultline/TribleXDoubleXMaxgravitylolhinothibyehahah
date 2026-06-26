@@ -5,12 +5,12 @@ import UIKit
 import LiquidGlassKit
 
 struct MGLiquidGlassRepresentable: UIViewRepresentable {
-    func makeUIView(context: Context) -> LiquidGlassView {
-        let view = LiquidGlassView()
+    func makeUIView(context: Context) -> LiquidGlassEffectView {
+        let view = LiquidGlassEffectView()
         return view
     }
     
-    func updateUIView(_ uiView: LiquidGlassView, context: Context) {}
+    func updateUIView(_ uiView: LiquidGlassEffectView, context: Context) {}
 }
 
 struct MGLiquidLensRepresentable: UIViewRepresentable {
@@ -22,7 +22,7 @@ struct MGLiquidLensRepresentable: UIViewRepresentable {
     }
     
     func updateUIView(_ uiView: LiquidLensView, context: Context) {
-        uiView.isLifted = isLifted
+        // isLifted is a private/internal property of LiquidLensView in LiquidGlassKit
     }
 }
 #endif

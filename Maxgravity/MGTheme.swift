@@ -6,7 +6,7 @@ import LiquidGlassKit
 
 struct MGLiquidGlassRepresentable: UIViewRepresentable {
     func makeUIView(context: Context) -> LiquidGlassEffectView {
-        let view = LiquidGlassEffectView()
+        let view = LiquidGlassEffectView(effect: nil)
         return view
     }
     

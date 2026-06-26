@@ -1,0 +1,44 @@
+{
+  "features": [
+    {
+      "name": "Product Identity",
+      "status": "VERIFIED_LOCAL",
+      "evidence": "MGComponents.swift:9-30 (MGBrandMark and MGBrandWordmark are implemented correctly without duplicate logos)."
+    },
+    {
+      "name": "iPhone Architecture",
+      "status": "BROKEN",
+      "evidence": "MGScreens.swift:104-121 (MGMainShellView implements a persistent four-tab bar: Spaces, Activity, Workspace, Settings. This directly violates the two-root screen and swipeable panel architecture contract)."
+    },
+    {
+      "name": "Visual Direction",
+      "status": "PARTIAL",
+      "evidence": "MGTheme.swift defines black and graphite surface colors, but MGScreens.swift:225 introduces a forbidden blue product accent for active tab highlights, and MGGoogleAvatar uses circular avatars violating the visual contract."
+    },
+    {
+      "name": "Antigravity Model and Billing Contract",
+      "status": "LIVE_VERIFIED",
+      "evidence": "antigravity-adapter.ts:60-322 and index.ts check local Antigravity CLI and AppData logs main.log without any external Gemini API billing keys or setups."
+    },
+    {
+      "name": "Local Bridge",
+      "status": "VERIFIED_LOCAL",
+      "evidence": "server.ts, pairing.ts, workspace.ts, and Vitest suite prove local pairing logic, token expiration, replay protection, and path traversal checks are fully operational locally."
+    },
+    {
+      "name": "Live Task Execution & Progress Events",
+      "status": "LIVE_VERIFIED",
+      "evidence": "antigravity-adapter.ts:604-678 (log polling of transcript.jsonl maps active agent steps to event stage transitions and streams them over WebSocket successfully)."
+    },
+    {
+      "name": "Approval Steering & Resolution",
+      "status": "PARTIAL",
+      "evidence": "App detects awaiting approval from transcript log. Steering message is sent over WebSocket to bridge, but the bridge has no API to resolve approvals or modify agent actions (ABSENT on bridge side)."
+    },
+    {
+      "name": "Live Activity background pushes",
+      "status": "PARTIAL",
+      "evidence": "MGServices.swift:550-587 (foreground Live Activity is supported, but background updates require Apple APNs verification which is missing)."
+    }
+  ]
+}

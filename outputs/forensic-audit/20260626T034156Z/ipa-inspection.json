@@ -1,0 +1,30 @@
+{
+  "ipaPath": "outputs/release/Maxgravity-1.1-Integration-Ready.ipa",
+  "zipFormatVerified": true,
+  "payloadContents": [
+    "Payload/Maxgravity.app/Info.plist",
+    "Payload/Maxgravity.app/Maxgravity (Executable)",
+    "Payload/Maxgravity.app/Assets.car",
+    "Payload/Maxgravity.app/AppIcon60x60@2x.png",
+    "Payload/Maxgravity.app/LiquidGlassKit_LiquidGlassKit.bundle/default.metallib",
+    "Payload/Maxgravity.app/LiquidGlassKit_LiquidGlassKit.bundle/Info.plist"
+  ],
+  "metadata": {
+    "displayName": "Maxgravity",
+    "bundleIdentifier": "com.antigravity.Maxgravity",
+    "minimumDeploymentTarget": "iOS 17.0",
+    "architectures": ["arm64", "x86_64"],
+    "supportedPlatforms": ["iphoneos", "iphonesimulator"]
+  },
+  "appExtensions": {
+    "hasWidgetExtension": false,
+    "hasLiveActivityPushExtension": false,
+    "details": "No external widget or push extension bundles exist in the payload directory. Live Activity executes in the foreground app process only."
+  },
+  "codeSigning": {
+    "status": "UNSIGNED",
+    "signingIdentity": null,
+    "sideloadlyCompatibility": "Compatible (requires user to resign using their own developer account)"
+  },
+  "embeddedSecrets": "None detected by scanner"
+}

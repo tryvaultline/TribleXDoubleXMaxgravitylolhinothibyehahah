@@ -1,0 +1,70 @@
+﻿                   
+                   
+ΓöîΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÉ
+Γöé 8 Code Findings Γöé
+ΓööΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÿ
+                               
+    Maxgravity\MGServices.swift
+   Γ¥»Γ¥»Γ¥▒ javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
+          Γ¥░Γ¥░ Blocking Γ¥▒Γ¥▒
+          Insecure WebSocket Detected. WebSocket Secure (wss) should be used for all WebSocket connections.
+          Details: https://sg.run/GWyz                                                                     
+                                                                                                           
+          145Γöå .replacingOccurrences(of: "ws://", with: "http://")
+            Γï«Γöå----------------------------------------
+          239Γöå .replacingOccurrences(of: "ws://", with: "http://")
+            Γï«Γöå----------------------------------------
+          1219Γöå address: "ws://192.168.1.18:59443",
+                                     
+    bridge\src\antigravity-adapter.ts
+   Γ¥»Γ¥»Γ¥▒ javascript.lang.security.audit.spawn-shell-true.spawn-shell-true
+          Γ¥░Γ¥░ Blocking Γ¥▒Γ¥▒
+          Found '$SPAWN' with '{shell: process.platform === "win32"}'. This is dangerous because this call
+          will spawn the command using a shell process. Doing so propagates current shell settings and    
+          variables, which makes it much easier for a malicious actor to execute commands. Use '{shell:   
+          false}' instead.                                                                                
+          Details: https://sg.run/Wgeo                                                                    
+                                                                                                          
+          500Γöå const child = spawn(this.agentApiBat, ["send-message", realId, prompt], {
+          501Γöå   cwd: workspaceRoot,
+          502Γöå   env: {
+          503Γöå     ...process.env,
+          504Γöå     ANTIGRAVITY_LS_ADDRESS: session.address,
+          505Γöå     ANTIGRAVITY_CSRF_TOKEN: session.token
+          506Γöå   },
+          507Γöå   shell: process.platform === "win32"
+          508Γöå });
+            Γï«Γöå----------------------------------------
+          541Γöå const child = spawn(this.agentApiBat, ["new-conversation", "-model", cliModel, prompt], {
+          542Γöå   cwd: workspaceRoot,
+          543Γöå   env: {
+          544Γöå     ...process.env,
+          545Γöå     ANTIGRAVITY_LS_ADDRESS: session.address,
+          546Γöå     ANTIGRAVITY_CSRF_TOKEN: session.token
+          547Γöå   },
+          548Γöå   shell: process.platform === "win32"
+          549Γöå });
+   
+     Γ¥▒ javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring
+          Γ¥░Γ¥░ Blocking Γ¥▒Γ¥▒
+          Detected string concatenation with a non-literal variable in a util.format / console.log function.
+          If an attacker injects a format specifier in the string, it will forge the log message. Try to use
+          constant values for the format string.                                                            
+          Details: https://sg.run/7Y5R                                                                      
+                                                                                                            
+          703Γöå console.error(`Failed to poll logs for task ${task.id}:`, err);
+                                
+    bridge\src\security\certs.ts
+   Γ¥»Γ¥»Γ¥▒ javascript.lang.security.detect-child-process.detect-child-process
+          Γ¥░Γ¥░ Blocking Γ¥▒Γ¥▒
+          Detected calls to child_process from a function argument `localDir`. This could lead to a command
+          injection if the input is user controllable. Try to avoid calls to child_process, and if it is   
+          needed ensure user input is correctly sanitized or sandboxed.                                    
+          Details: https://sg.run/l2lo                                                                     
+                                                                                                           
+           27Γöå `${opensslCmd} req -x509 -newkey rsa:2048 -keyout "${keyPath}" -out "${certPath}" -sha256
+               -days 3650 -nodes -subj "/CN=maxgravity-local-bridge"`,                                  
+            Γï«Γöå----------------------------------------
+           35Γöå `openssl req -x509 -newkey rsa:2048 -keyout "${keyPath}" -out "${certPath}" -sha256 -days
+               3650 -nodes -subj "/CN=maxgravity-local-bridge"`,                                        
+

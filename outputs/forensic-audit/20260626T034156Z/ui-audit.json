@@ -1,0 +1,28 @@
+{
+  "compliance": {
+    "pureBlackBackground": {
+      "status": "COMPLIANT",
+      "details": "MGTheme.background is Color.black"
+    },
+    "deepGraphiteSurfaces": {
+      "status": "COMPLIANT",
+      "details": "MGTheme.surface is HSL graphite equivalent"
+    },
+    "noBlueProductAccent": {
+      "status": "NON_COMPLIANT",
+      "details": "MGScreens.swift uses Color(red: 0.22, green: 0.54, blue: 1.0) (active blue) for tab selection highlight in MGAnimatedTabBar."
+    },
+    "iphoneArchitecture": {
+      "status": "NON_COMPLIANT",
+      "details": "Persistent four-tab layout implemented (Spaces, Activity, Workspace, Settings) instead of exactly two primary root screens (Spaces, Chat) with swipeable panels for Settings and Activity."
+    },
+    "noWebViewShell": {
+      "status": "COMPLIANT",
+      "details": "Built using native SwiftUI View elements."
+    },
+    "noAvatarCircles": {
+      "status": "NON_COMPLIANT",
+      "details": "MGGoogleAvatar utilizes a Circle shape to clip the Google account avatar."
+    }
+  }
+}

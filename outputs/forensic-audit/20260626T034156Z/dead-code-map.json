@@ -1,0 +1,22 @@
+{
+  "deadCode": [
+    {
+      "file": "bridge/src/security/dpapi.ts",
+      "type": "Unreferenced Module",
+      "description": "The Windows Data Protection API (DPAPI) helper functions protectForCurrentUser and unprotectForCurrentUser are fully coded but never imported or used. Paired device secrets are written in plaintext inside trusted-devices.json.",
+      "evidence": "Grep search for 'protect' shows no references outside dpapi.ts itself."
+    },
+    {
+      "file": "bridge/src/antigravity-adapter.ts",
+      "type": "Dead Stream Logic",
+      "description": "Stdout buffering logic exists in the child spawn block for new-conversation, but the server only returns on process close. There is no route or streaming socket that exposes real-time stdout chunks to the client.",
+      "evidence": "antigravity-adapter.ts:525-580 child spawn handlers."
+    },
+    {
+      "file": "Maxgravity/MGScreens.swift",
+      "type": "Stubbed Menu Handlers",
+      "description": "Context menu items for chats and spaces (e.g., 'Pin chat', 'Rename chat', 'Delete local history', 'Rename Space') contain empty closures and perform no operational changes.",
+      "evidence": "MGScreens.swift:184-189 and MGScreens.swift:483-490."
+    }
+  ]
+}

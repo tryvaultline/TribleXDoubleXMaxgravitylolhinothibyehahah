@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-06-26T03:44:00Z",
+  "bridge": {
+    "framework": "vitest",
+    "version": "4.1.9",
+    "testFiles": 4,
+    "testsTotal": 11,
+    "testsPassed": 11,
+    "testsFailed": 0,
+    "files": [
+      {
+        "path": "bridge/tests/workspace.test.ts",
+        "tests": 2,
+        "status": "passed"
+      },
+      {
+        "path": "bridge/tests/pairing.test.ts",
+        "tests": 4,
+        "status": "passed"
+      },
+      {
+        "path": "bridge/tests/schemas.test.ts",
+        "tests": 3,
+        "status": "passed"
+      },
+      {
+        "path": "bridge/tests/server.test.ts",
+        "tests": 2,
+        "status": "passed"
+      }
+    ]
+  },
+  "ios": {
+    "framework": null,
+    "testFiles": 0,
+    "testsTotal": 0,
+    "testsPassed": 0,
+    "testsFailed": 0,
+    "files": []
+  }
+}

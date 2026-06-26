@@ -1,0 +1,38 @@
+{
+  "node": "v24.15.0",
+  "npm": "11.1.0",
+  "git": "git version 2.54.0.windows.1",
+  "semgrep": "1.163.0",
+  "swift": {
+    "status": "unavailable",
+    "error": "The term 'swift' is not recognized as the name of a cmdlet, function, script file, or operable program."
+  },
+  "xcodebuild": {
+    "status": "unavailable",
+    "error": "The term 'xcodebuild' is not recognized as the name of a cmdlet, function, script file, or operable program."
+  },
+  "gitleaks": {
+    "status": "unavailable",
+    "error": "The term 'gitleaks' is not recognized as the name of a cmdlet, function, script file, or operable program."
+  },
+  "osv-scanner": {
+    "status": "unavailable",
+    "error": "The term 'osv-scanner' is not recognized as the name of a cmdlet, function, script file, or operable program."
+  },
+  "trivy": {
+    "status": "unavailable",
+    "error": "The term 'trivy' is not recognized as the name of a cmdlet, function, script file, or operable program."
+  },
+  "syft": {
+    "status": "unavailable",
+    "error": "The term 'syft' is not recognized as the name of a cmdlet, function, script file, or operable program."
+  },
+  "actionlint": {
+    "status": "unavailable",
+    "error": "The term 'actionlint' is not recognized as the name of a cmdlet, function, script file, or operable program."
+  },
+  "zizmor": {
+    "status": "unavailable",
+    "error": "The term 'zizmor' is not recognized as the name of a cmdlet, function, script file, or operable program."
+  }
+}

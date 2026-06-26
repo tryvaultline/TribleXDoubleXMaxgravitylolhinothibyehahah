@@ -1,0 +1,6 @@
+Command: syft --version
+Exit Code: CommandNotFoundException
+Version: N/A (Command not found)
+Limitation: The syft tool is not installed on this local Windows machine.
+Error Message:
+syft : The term 'syft' is not recognized as the name of a cmdlet, function, script file, or operable program.

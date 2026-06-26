@@ -1,0 +1,6 @@
+Command: actionlint -version
+Exit Code: CommandNotFoundException
+Version: N/A (Command not found)
+Limitation: The actionlint tool is not installed on this local Windows machine.
+Error Message:
+actionlint : The term 'actionlint' is not recognized as the name of a cmdlet, function, script file, or operable program.

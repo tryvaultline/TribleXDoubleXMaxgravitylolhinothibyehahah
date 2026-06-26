@@ -1,0 +1,39 @@
+{
+  "iosApp": {
+    "coveragePercent": 0,
+    "untestedComponents": [
+      {
+        "component": "MGCameraScanner.swift",
+        "details": "No tests for camera permission handling, QR scanning pipeline, or overlay frame rendering."
+      },
+      {
+        "component": "MGServices.swift",
+        "details": "No tests for WebSocket lifecycle, API calls, QR decoding fallback, or Keychain storage operations."
+      },
+      {
+        "component": "MGScreens.swift",
+        "details": "No visual regression, snapshot, or UI automation tests for Spaces, Chats, Workspace, Settings, or New Task screens."
+      },
+      {
+        "component": "MGComponents.swift",
+        "details": "No tests for Liquid Glass treatments, custom button behaviors, or accessory bar elements."
+      }
+    ]
+  },
+  "bridge": {
+    "untestedComponents": [
+      {
+        "component": "antigravity-adapter.ts",
+        "details": "No unit or integration tests exist for executing the live Antigravity CLI (agentapi.bat), spawning the background process, parsing the `--help` outputs, or polling log files (transcript.jsonl)."
+      },
+      {
+        "component": "security/dpapi.ts",
+        "details": "No tests exist for Windows DPAPI encryption wrappers since they are currently unused."
+      },
+      {
+        "component": "server.ts",
+        "details": "No tests cover the live WebSocket tasks endpoint (/v1/tasks/:taskId/events) or token-based Authorization header check under websocket context."
+      }
+    ]
+  }
+}

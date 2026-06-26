@@ -1,0 +1,83 @@
+{
+  "planName": "Maxgravity Forensic Audit Remediation Plan",
+  "phases": [
+    {
+      "phaseName": "Phase 1: Security & Trust",
+      "priority": "P0",
+      "items": [
+        {
+          "id": "MG-REC-002",
+          "title": "Fix TLS Verification Bypass",
+          "effort": "M",
+          "description": "Remove trust-all delegate and implement certificate pinning on the iPhone client using the fingerprint from QR payload."
+        },
+        {
+          "id": "MG-REC-005",
+          "title": "Add Desktop Pairing Confirmation",
+          "effort": "M",
+          "description": "Block trust endpoint responses until the user manually clicks approve on the Windows desktop host."
+        }
+      ]
+    },
+    {
+      "phaseName": "Phase 2: Navigation Refactoring",
+      "priority": "P0",
+      "items": [
+        {
+          "id": "MG-REC-001",
+          "title": "Refactor Tab Bar to Swipeable Panels",
+          "effort": "M",
+          "description": "Remove Workspace, Settings, and Activity tabs from the persistent navigation bar. Implement swipeable sheets/overlays for Settings and Activity."
+        }
+      ]
+    },
+    {
+      "phaseName": "Phase 3: Visual & UX Policy Compliance",
+      "priority": "P1",
+      "items": [
+        {
+          "id": "MG-REC-003",
+          "title": "Remove Blue Accents",
+          "effort": "XS",
+          "description": "Change active tab icon highlights in animated tab bar to white/off-white."
+        },
+        {
+          "id": "MG-REC-008",
+          "title": "Remove Circle Avatars",
+          "effort": "XS",
+          "description": "Change the circular mask on the Google account avatar to a squircle/rounded rectangle."
+        },
+        {
+          "id": "MG-REC-009",
+          "title": "Add Offline Diagnostic View",
+          "effort": "S",
+          "description": "Create a dedicated Offline screen overlay when the WebSocket heartbeat fails to reach the bridge."
+        }
+      ]
+    },
+    {
+      "phaseName": "Phase 4: Integrations & Features",
+      "priority": "P1",
+      "items": [
+        {
+          "id": "MG-REC-004",
+          "title": "Implement DPAPI Encrypted Storage",
+          "effort": "S",
+          "description": "Encrypt paired device secret hashes inside trusted-devices.json on the Windows filesystem using DPAPI wrappers."
+        },
+        {
+          "id": "MG-REC-007",
+          "title": "Implement Agent Approval Resolution",
+          "effort": "M",
+          "description": "Create a REST API route to pass approved or rejected choices from the iPhone client to the running CLI agent session."
+        },
+        {
+          "id": "MG-REC-006",
+          "title": "Stream CLI Stdout in Real-Time",
+          "effort": "M",
+          "description": "Pipe live spawn stdout events to the client WebSocket instead of buffering till exit."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "workflowPath": ".github/workflows/ios-ci.yml",
+  "triggers": [
+    "push (main branch)",
+    "pull_request",
+    "workflow_dispatch"
+  ],
+  "jobs": {
+    "bridge": {
+      "runner": "windows-latest",
+      "nodeVersion": 24,
+      "steps": [
+        "Checkout",
+        "Setup Node",
+        "Install bridge dependencies",
+        "Bridge typecheck",
+        "Bridge lint",
+        "Bridge tests",
+        "Bridge build",
+        "Bridge security audit",
+        "Bridge secret scan",
+        "Bridge license summary"
+      ]
+    },
+    "ios": {
+      "runner": "macos-15",
+      "xcode": "latest-stable",
+      "steps": [
+        "Checkout",
+        "Select latest Xcode",
+        "Show Xcode version",
+        "Check iOS static policy",
+        "Swift source lint (advisory)",
+        "Build Maxgravity for simulator",
+        "Build Maxgravity for device",
+        "Package unsigned IPA",
+        "Package simulator app bundle",
+        "Upload unsigned IPA",
+        "Upload simulator app bundle"
+      ]
+    }
+  },
+  "verifications": {
+    "codeSigningBypassed": true,
+    "signingFlags": [
+      "CODE_SIGNING_ALLOWED=NO",
+      "CODE_SIGNING_REQUIRED=NO",
+      "CODE_SIGN_IDENTITY=\"\""
+    ],
+    "untestedTargets": [
+      "iOS native unit/UI tests are entirely absent from the workflow"
+    ]
+  }
+}

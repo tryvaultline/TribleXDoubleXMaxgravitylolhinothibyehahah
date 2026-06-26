@@ -1,0 +1,288 @@
+{
+  "totalSourceFiles": 54,
+  "extensionCounts": {
+    ".yml": 1,
+    "": 1,
+    ".js": 1,
+    ".json": 9,
+    ".md": 12,
+    ".mjs": 3,
+    ".ts": 16,
+    ".png": 13,
+    ".plist": 1,
+    ".swift": 8,
+    ".pbxproj": 1
+  },
+  "sourceFiles": [
+    {
+      "path": ".github/workflows/ios-ci.yml",
+      "ext": ".yml",
+      "sizeBytes": 4278
+    },
+    {
+      "path": ".gitignore",
+      "ext": "",
+      "sizeBytes": 454
+    },
+    {
+      "path": "bridge/eslint.config.js",
+      "ext": ".js",
+      "sizeBytes": 888
+    },
+    {
+      "path": "bridge/package-lock.json",
+      "ext": ".json",
+      "sizeBytes": 142269
+    },
+    {
+      "path": "bridge/package.json",
+      "ext": ".json",
+      "sizeBytes": 1300
+    },
+    {
+      "path": "bridge/scripts/secret-scan.mjs",
+      "ext": ".mjs",
+      "sizeBytes": 1298
+    },
+    {
+      "path": "bridge/src/antigravity-adapter.ts",
+      "ext": ".ts",
+      "sizeBytes": 23881
+    },
+    {
+      "path": "bridge/src/crypto.ts",
+      "ext": ".ts",
+      "sizeBytes": 767
+    },
+    {
+      "path": "bridge/src/index.ts",
+      "ext": ".ts",
+      "sizeBytes": 1438
+    },
+    {
+      "path": "bridge/src/pair-tool.ts",
+      "ext": ".ts",
+      "sizeBytes": 12167
+    },
+    {
+      "path": "bridge/src/pairing.ts",
+      "ext": ".ts",
+      "sizeBytes": 4669
+    },
+    {
+      "path": "bridge/src/redaction.ts",
+      "ext": ".ts",
+      "sizeBytes": 564
+    },
+    {
+      "path": "bridge/src/schemas.ts",
+      "ext": ".ts",
+      "sizeBytes": 2678
+    },
+    {
+      "path": "bridge/src/security/dpapi.ts",
+      "ext": ".ts",
+      "sizeBytes": 1425
+    },
+    {
+      "path": "bridge/src/server.ts",
+      "ext": ".ts",
+      "sizeBytes": 15163
+    },
+    {
+      "path": "bridge/src/trust-store.ts",
+      "ext": ".ts",
+      "sizeBytes": 2488
+    },
+    {
+      "path": "bridge/src/workspace.ts",
+      "ext": ".ts",
+      "sizeBytes": 3581
+    },
+    {
+      "path": "bridge/tests/pairing.test.ts",
+      "ext": ".ts",
+      "sizeBytes": 3143
+    },
+    {
+      "path": "bridge/tests/schemas.test.ts",
+      "ext": ".ts",
+      "sizeBytes": 1400
+    },
+    {
+      "path": "bridge/tests/server.test.ts",
+      "ext": ".ts",
+      "sizeBytes": 1766
+    },
+    {
+      "path": "bridge/tests/workspace.test.ts",
+      "ext": ".ts",
+      "sizeBytes": 1058
+    },
+    {
+      "path": "bridge/tsconfig.json",
+      "ext": ".json",
+      "sizeBytes": 510
+    },
+    {
+      "path": "bridge/vitest.config.ts",
+      "ext": ".ts",
+      "sizeBytes": 146
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset/Contents.json",
+      "ext": ".json",
+      "sizeBytes": 1243
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+      "ext": ".png",
+      "sizeBytes": 539629
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset/icon-20@2x.png",
+      "ext": ".png",
+      "sizeBytes": 1818
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset/icon-20@3x.png",
+      "ext": ".png",
+      "sizeBytes": 3131
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset/icon-29@2x.png",
+      "ext": ".png",
+      "sizeBytes": 3023
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset/icon-29@3x.png",
+      "ext": ".png",
+      "sizeBytes": 5288
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset/icon-40@2x.png",
+      "ext": ".png",
+      "sizeBytes": 4707
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset/icon-40@3x.png",
+      "ext": ".png",
+      "sizeBytes": 8437
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset/icon-60@2x.png",
+      "ext": ".png",
+      "sizeBytes": 8437
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset/icon-60@3x.png",
+      "ext": ".png",
+      "sizeBytes": 17369
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/Contents.json",
+      "ext": ".json",
+      "sizeBytes": 69
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/MaxgravityMarkDark.imageset/Contents.json",
+      "ext": ".json",
+      "sizeBytes": 339
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/MaxgravityMarkDark.imageset/maxgravity-mark-dark.png",
+      "ext": ".png",
+      "sizeBytes": 621289
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/MaxgravityMarkGradient.imageset/Contents.json",
+      "ext": ".json",
+      "sizeBytes": 343
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/MaxgravityMarkGradient.imageset/maxgravity-mark-gradient.png",
+      "ext": ".png",
+      "sizeBytes": 667639
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/MaxgravityMarkLight.imageset/Contents.json",
+      "ext": ".json",
+      "sizeBytes": 340
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/MaxgravityMarkLight.imageset/maxgravity-mark-light.png",
+      "ext": ".png",
+      "sizeBytes": 780224
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/MaxgravityWordmark.imageset/Contents.json",
+      "ext": ".json",
+      "sizeBytes": 338
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/MaxgravityWordmark.imageset/maxgravity-wordmark.png",
+      "ext": ".png",
+      "sizeBytes": 791652
+    },
+    {
+      "path": "Maxgravity/Info.plist",
+      "ext": ".plist",
+      "sizeBytes": 1787
+    },
+    {
+      "path": "Maxgravity/MaxgravityApp.swift",
+      "ext": ".swift",
+      "sizeBytes": 319
+    },
+    {
+      "path": "Maxgravity/MGCameraScanner.swift",
+      "ext": ".swift",
+      "sizeBytes": 7232
+    },
+    {
+      "path": "Maxgravity/MGComponents.swift",
+      "ext": ".swift",
+      "sizeBytes": 37966
+    },
+    {
+      "path": "Maxgravity/MGModels.swift",
+      "ext": ".swift",
+      "sizeBytes": 11412
+    },
+    {
+      "path": "Maxgravity/MGPrivateAPIGuard.swift",
+      "ext": ".swift",
+      "sizeBytes": 309
+    },
+    {
+      "path": "Maxgravity/MGScreens.swift",
+      "ext": ".swift",
+      "sizeBytes": 74196
+    },
+    {
+      "path": "Maxgravity/MGServices.swift",
+      "ext": ".swift",
+      "sizeBytes": 61040
+    },
+    {
+      "path": "Maxgravity/MGTheme.swift",
+      "ext": ".swift",
+      "sizeBytes": 9656
+    },
+    {
+      "path": "Maxgravity.xcodeproj/project.pbxproj",
+      "ext": ".pbxproj",
+      "sizeBytes": 13549
+    },
+    {
+      "path": "scripts/check-ios-static.mjs",
+      "ext": ".mjs",
+      "sizeBytes": 1178
+    },
+    {
+      "path": "scripts/check-private-api.mjs",
+      "ext": ".mjs",
+      "sizeBytes": 1212
+    }
+  ]
+}

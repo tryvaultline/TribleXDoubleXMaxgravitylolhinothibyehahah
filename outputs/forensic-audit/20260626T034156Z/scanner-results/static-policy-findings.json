@@ -1,0 +1,13 @@
+{
+  "scanType": "static-policy-check",
+  "commands": [
+    "node scripts/check-ios-static.mjs",
+    "node scripts/check-private-api.mjs"
+  ],
+  "exitCode": 0,
+  "findingsTotal": 0,
+  "output": [
+    "iOS static policy check passed.",
+    "No private Apple API references found in the iOS target."
+  ]
+}

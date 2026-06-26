@@ -1,0 +1,6 @@
+Command: osv-scanner --version
+Exit Code: CommandNotFoundException
+Version: N/A (Command not found)
+Limitation: The osv-scanner tool is not installed on this local Windows machine.
+Error Message:
+osv-scanner : The term 'osv-scanner' is not recognized as the name of a cmdlet, function, script file, or operable program.

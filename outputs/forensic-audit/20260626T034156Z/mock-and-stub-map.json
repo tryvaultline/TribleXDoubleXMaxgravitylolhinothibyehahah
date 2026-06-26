@@ -1,0 +1,36 @@
+{
+  "mocks": [
+    {
+      "sourceFile": "Maxgravity/MGServices.swift",
+      "symbol": "MGFixtures",
+      "type": "Static Struct",
+      "mockedData": [
+        "models",
+        "pairingPayload",
+        "connectedComputer",
+        "capabilities",
+        "trustedDevices",
+        "thread",
+        "spaces",
+        "activityBuckets",
+        "schedules",
+        "remoteRoots"
+      ],
+      "usage": "Provides fallback data when the bridge is not connected or returns an error. Also used in SwiftUI previews."
+    },
+    {
+      "sourceFile": "Maxgravity/MGServices.swift",
+      "symbol": "MGMockBridgeClient",
+      "type": "Mock Class Conforming to MGBridgeClient",
+      "mockedData": "Simulates all bridge protocol methods with hardcoded results from MGFixtures.",
+      "usage": "Scaffolded fallback client; not initialized in production unless explicitly passed."
+    },
+    {
+      "sourceFile": "Maxgravity/MGScreens.swift",
+      "symbol": "SwiftUI Previews",
+      "type": "Preview Providers",
+      "mockedData": "Invokes connectMockComputer() to populate MGAppModel state with static data.",
+      "usage": "Used for Xcode canvas previews of Spaces, Chats, and New Task screens."
+    }
+  ]
+}

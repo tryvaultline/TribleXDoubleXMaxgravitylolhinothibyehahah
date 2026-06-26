@@ -1,0 +1,16 @@
+{"command":"git status; git log -n 5; git branch -a","exitCode":0,"timestamp":"2026-06-26T03:42:21Z"}
+{"command":"node --version; npm --version; git --version; swift --version; xcodebuild -version","exitCode":1,"timestamp":"2026-06-26T03:42:27Z"}
+{"command":"semgrep --version; gitleaks version; osv-scanner --version; trivy --version; syft --version; actionlint --version; zizmor --version","exitCode":1,"timestamp":"2026-06-26T03:42:35Z"}
+{"command":"Test-Path C:\\Users\\kuroi\\.gemini\\antigravity\\bin\\agentapi.bat","exitCode":0,"timestamp":"2026-06-26T03:44:25Z"}
+{"command":"& C:\\Users\\kuroi\\.gemini\\antigravity\\bin\\agentapi.bat --help","exitCode":1,"timestamp":"2026-06-26T03:44:29Z"}
+{"command":"& C:\\Users\\kuroi\\.gemini\\antigravity\\bin\\agentapi.bat new-conversation --help","exitCode":1,"timestamp":"2026-06-26T03:44:33Z"}
+{"command":"dir C:\\Users\\kuroi\\AppData\\Roaming\\Antigravity\\logs","exitCode":0,"timestamp":"2026-06-26T03:44:37Z"}
+{"command":"npm run build","exitCode":0,"timestamp":"2026-06-26T03:43:51Z"}
+{"command":"npm run lint; npm run test","exitCode":0,"timestamp":"2026-06-26T03:43:56Z"}
+{"command":"npm run security:audit; npm run secret-scan","exitCode":0,"timestamp":"2026-06-26T03:44:03Z"}
+{"command":"node scripts/check-ios-static.mjs; node scripts/check-private-api.mjs","exitCode":0,"timestamp":"2026-06-26T03:44:19Z"}
+{"command":"npm run bridge:doctor","exitCode":0,"timestamp":"2026-06-26T03:44:41Z"}
+{"command":"npm run bridge:status","exitCode":0,"timestamp":"2026-06-26T03:44:45Z"}
+{"command":"npm run bridge:devices","exitCode":0,"timestamp":"2026-06-26T03:44:53Z"}
+{"command":"Get-ChildItem -Path c:\\Users\\kuroi\\OneDrive\\Desktop\\Maxgravity -Filter *.ipa -Recurse","exitCode":0,"timestamp":"2026-06-26T03:44:57Z"}
+{"command":"Copy-Item ... ; Expand-Archive ... ; Get-ChildItem ...","exitCode":0,"timestamp":"2026-06-26T03:45:10Z"}

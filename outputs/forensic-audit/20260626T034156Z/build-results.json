@@ -1,0 +1,27 @@
+{
+  "bridge": {
+    "localBuildStatus": "SUCCESS",
+    "compiler": "tsc",
+    "target": "ESNext",
+    "outputDir": "bridge/dist",
+    "errors": []
+  },
+  "ios": {
+    "localBuildStatus": "BLOCKED_ON_PLATFORM",
+    "reason": "xcodebuild is not available on Windows platform",
+    "releaseArtifacts": [
+      {
+        "name": "Maxgravity-1.0-SideStore.ipa",
+        "sizeBytes": 3596992,
+        "path": "outputs/release/Maxgravity-1.0-SideStore.ipa",
+        "signatureStatus": "unsigned / ad-hoc (verified zip archive structure)"
+      },
+      {
+        "name": "Maxgravity-1.1-Integration-Ready.ipa",
+        "sizeBytes": 3784638,
+        "path": "outputs/release/Maxgravity-1.1-Integration-Ready.ipa",
+        "signatureStatus": "unsigned / ad-hoc (verified zip archive structure)"
+      }
+    ]
+  }
+}

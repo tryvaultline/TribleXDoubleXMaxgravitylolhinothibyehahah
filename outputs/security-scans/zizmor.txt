@@ -1,0 +1,6 @@
+Command: zizmor --version
+Exit Code: CommandNotFoundException
+Version: N/A (Command not found)
+Limitation: The zizmor tool is not installed on this local Windows machine.
+Error Message:
+zizmor : The term 'zizmor' is not recognized as the name of a cmdlet, function, script file, or operable program.

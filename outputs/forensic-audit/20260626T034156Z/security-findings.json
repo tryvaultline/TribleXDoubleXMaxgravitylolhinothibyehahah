@@ -1,0 +1,29 @@
+[
+  {
+    "id": "SEC-001",
+    "area": "TLS Validation",
+    "finding": "Bypass of server certificate validation in iOS client",
+    "evidence": "Maxgravity/MGServices.swift:492-502 (MGTrustAllCertsDelegate)",
+    "severity": "High",
+    "risk": "A Man-in-the-Middle (MITM) attacker on the local network can intercept or modify all WebSocket and HTTP communication between the iPhone and the desktop bridge because the client unconditionally trusts any SSL/TLS certificate.",
+    "recommendation": "Use self-signed certificates pinned directly from the QR payload instead of disabling trust verification entirely."
+  },
+  {
+    "id": "SEC-002",
+    "area": "Bridge Pairing",
+    "finding": "Missing desktop-side pairing approval dialogue",
+    "evidence": "bridge/src/server.ts:59-69 (/v1/connection/trust endpoint)",
+    "severity": "Medium",
+    "risk": "An attacker on the same local network who intercepts or brute-forces the 8-character pairing token can successfully register their device as trusted. The bridge automatically accepts the trust request without prompting the desktop user for confirmation.",
+    "recommendation": "Require explicit confirmation on the Windows host before saving the trusted device to store."
+  },
+  {
+    "id": "SEC-003",
+    "area": "Network Exposure",
+    "finding": "Bridge binds to all network interfaces (0.0.0.0) by default",
+    "evidence": "bridge/src/index.ts:28",
+    "severity": "Low",
+    "risk": "If the computer is connected to a public Wi-Fi or non-firewalled network, the bridge API is exposed to all devices on that network.",
+    "recommendation": "Bind to localhost by default and print a warning, or prompt the user before binding to 0.0.0.0."
+  }
+]

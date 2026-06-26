@@ -1,0 +1,416 @@
+{
+  "rootPath": "c:\\Users\\kuroi\\OneDrive\\Desktop\\Maxgravity",
+  "timestamp": "2026-06-26T03:45:47.641Z",
+  "files": [
+    {
+      "path": ".agents",
+      "isDir": true
+    },
+    {
+      "path": ".codex",
+      "isDir": true
+    },
+    {
+      "path": ".github",
+      "isDir": true
+    },
+    {
+      "path": ".github/workflows",
+      "isDir": true
+    },
+    {
+      "path": ".github/workflows/ios-ci.yml",
+      "isDir": false,
+      "sizeBytes": 4278
+    },
+    {
+      "path": ".gitignore",
+      "isDir": false,
+      "sizeBytes": 454
+    },
+    {
+      "path": "bridge",
+      "isDir": true
+    },
+    {
+      "path": "bridge/bridge",
+      "isDir": true
+    },
+    {
+      "path": "bridge/eslint.config.js",
+      "isDir": false,
+      "sizeBytes": 888
+    },
+    {
+      "path": "bridge/package-lock.json",
+      "isDir": false,
+      "sizeBytes": 142269
+    },
+    {
+      "path": "bridge/package.json",
+      "isDir": false,
+      "sizeBytes": 1300
+    },
+    {
+      "path": "bridge/README.md",
+      "isDir": false,
+      "sizeBytes": 1122
+    },
+    {
+      "path": "bridge/scripts",
+      "isDir": true
+    },
+    {
+      "path": "bridge/scripts/secret-scan.mjs",
+      "isDir": false,
+      "sizeBytes": 1298
+    },
+    {
+      "path": "bridge/src",
+      "isDir": true
+    },
+    {
+      "path": "bridge/src/antigravity-adapter.ts",
+      "isDir": false,
+      "sizeBytes": 23881
+    },
+    {
+      "path": "bridge/src/crypto.ts",
+      "isDir": false,
+      "sizeBytes": 767
+    },
+    {
+      "path": "bridge/src/index.ts",
+      "isDir": false,
+      "sizeBytes": 1438
+    },
+    {
+      "path": "bridge/src/pair-tool.ts",
+      "isDir": false,
+      "sizeBytes": 12167
+    },
+    {
+      "path": "bridge/src/pairing.ts",
+      "isDir": false,
+      "sizeBytes": 4669
+    },
+    {
+      "path": "bridge/src/redaction.ts",
+      "isDir": false,
+      "sizeBytes": 564
+    },
+    {
+      "path": "bridge/src/schemas.ts",
+      "isDir": false,
+      "sizeBytes": 2678
+    },
+    {
+      "path": "bridge/src/security",
+      "isDir": true
+    },
+    {
+      "path": "bridge/src/security/dpapi.ts",
+      "isDir": false,
+      "sizeBytes": 1425
+    },
+    {
+      "path": "bridge/src/server.ts",
+      "isDir": false,
+      "sizeBytes": 15163
+    },
+    {
+      "path": "bridge/src/trust-store.ts",
+      "isDir": false,
+      "sizeBytes": 2488
+    },
+    {
+      "path": "bridge/src/workspace.ts",
+      "isDir": false,
+      "sizeBytes": 3581
+    },
+    {
+      "path": "bridge/tests",
+      "isDir": true
+    },
+    {
+      "path": "bridge/tests/pairing.test.ts",
+      "isDir": false,
+      "sizeBytes": 3143
+    },
+    {
+      "path": "bridge/tests/schemas.test.ts",
+      "isDir": false,
+      "sizeBytes": 1400
+    },
+    {
+      "path": "bridge/tests/server.test.ts",
+      "isDir": false,
+      "sizeBytes": 1766
+    },
+    {
+      "path": "bridge/tests/workspace.test.ts",
+      "isDir": false,
+      "sizeBytes": 1058
+    },
+    {
+      "path": "bridge/tsconfig.json",
+      "isDir": false,
+      "sizeBytes": 510
+    },
+    {
+      "path": "bridge/vitest.config.ts",
+      "isDir": false,
+      "sizeBytes": 146
+    },
+    {
+      "path": "docs",
+      "isDir": true
+    },
+    {
+      "path": "docs/ANTIGRAVITY_INTEGRATION.md",
+      "isDir": false,
+      "sizeBytes": 1237
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "isDir": false,
+      "sizeBytes": 1788
+    },
+    {
+      "path": "docs/bridge-contract.md",
+      "isDir": false,
+      "sizeBytes": 2761
+    },
+    {
+      "path": "docs/FINAL_PRODUCTION_COMPLETION_ORDER.md",
+      "isDir": false,
+      "sizeBytes": 27073
+    },
+    {
+      "path": "docs/IOS_BUILD_AND_SIGNING.md",
+      "isDir": false,
+      "sizeBytes": 1066
+    },
+    {
+      "path": "docs/KNOWN_LIMITATIONS.md",
+      "isDir": false,
+      "sizeBytes": 855
+    },
+    {
+      "path": "docs/LIVE_ACTIVITY_APNS_SETUP.md",
+      "isDir": false,
+      "sizeBytes": 733
+    },
+    {
+      "path": "docs/LOCAL_BRIDGE_SECURITY.md",
+      "isDir": false,
+      "sizeBytes": 1096
+    },
+    {
+      "path": "docs/PAIRING_PROTOCOL.md",
+      "isDir": false,
+      "sizeBytes": 983
+    },
+    {
+      "path": "docs/PRODUCTION_READINESS.md",
+      "isDir": false,
+      "sizeBytes": 2259
+    },
+    {
+      "path": "Maxgravity",
+      "isDir": true
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets",
+      "isDir": true
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset",
+      "isDir": true
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset/Contents.json",
+      "isDir": false,
+      "sizeBytes": 1243
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+      "isDir": false,
+      "sizeBytes": 539629
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset/icon-20@2x.png",
+      "isDir": false,
+      "sizeBytes": 1818
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset/icon-20@3x.png",
+      "isDir": false,
+      "sizeBytes": 3131
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset/icon-29@2x.png",
+      "isDir": false,
+      "sizeBytes": 3023
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset/icon-29@3x.png",
+      "isDir": false,
+      "sizeBytes": 5288
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset/icon-40@2x.png",
+      "isDir": false,
+      "sizeBytes": 4707
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset/icon-40@3x.png",
+      "isDir": false,
+      "sizeBytes": 8437
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset/icon-60@2x.png",
+      "isDir": false,
+      "sizeBytes": 8437
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/AppIcon.appiconset/icon-60@3x.png",
+      "isDir": false,
+      "sizeBytes": 17369
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/Contents.json",
+      "isDir": false,
+      "sizeBytes": 69
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/MaxgravityMarkDark.imageset",
+      "isDir": true
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/MaxgravityMarkDark.imageset/Contents.json",
+      "isDir": false,
+      "sizeBytes": 339
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/MaxgravityMarkDark.imageset/maxgravity-mark-dark.png",
+      "isDir": false,
+      "sizeBytes": 621289
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/MaxgravityMarkGradient.imageset",
+      "isDir": true
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/MaxgravityMarkGradient.imageset/Contents.json",
+      "isDir": false,
+      "sizeBytes": 343
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/MaxgravityMarkGradient.imageset/maxgravity-mark-gradient.png",
+      "isDir": false,
+      "sizeBytes": 667639
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/MaxgravityMarkLight.imageset",
+      "isDir": true
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/MaxgravityMarkLight.imageset/Contents.json",
+      "isDir": false,
+      "sizeBytes": 340
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/MaxgravityMarkLight.imageset/maxgravity-mark-light.png",
+      "isDir": false,
+      "sizeBytes": 780224
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/MaxgravityWordmark.imageset",
+      "isDir": true
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/MaxgravityWordmark.imageset/Contents.json",
+      "isDir": false,
+      "sizeBytes": 338
+    },
+    {
+      "path": "Maxgravity/Assets.xcassets/MaxgravityWordmark.imageset/maxgravity-wordmark.png",
+      "isDir": false,
+      "sizeBytes": 791652
+    },
+    {
+      "path": "Maxgravity/Info.plist",
+      "isDir": false,
+      "sizeBytes": 1787
+    },
+    {
+      "path": "Maxgravity/MaxgravityApp.swift",
+      "isDir": false,
+      "sizeBytes": 319
+    },
+    {
+      "path": "Maxgravity/MGCameraScanner.swift",
+      "isDir": false,
+      "sizeBytes": 7232
+    },
+    {
+      "path": "Maxgravity/MGComponents.swift",
+      "isDir": false,
+      "sizeBytes": 37966
+    },
+    {
+      "path": "Maxgravity/MGModels.swift",
+      "isDir": false,
+      "sizeBytes": 11412
+    },
+    {
+      "path": "Maxgravity/MGPrivateAPIGuard.swift",
+      "isDir": false,
+      "sizeBytes": 309
+    },
+    {
+      "path": "Maxgravity/MGScreens.swift",
+      "isDir": false,
+      "sizeBytes": 74196
+    },
+    {
+      "path": "Maxgravity/MGServices.swift",
+      "isDir": false,
+      "sizeBytes": 61040
+    },
+    {
+      "path": "Maxgravity/MGTheme.swift",
+      "isDir": false,
+      "sizeBytes": 9656
+    },
+    {
+      "path": "Maxgravity.xcodeproj",
+      "isDir": true
+    },
+    {
+      "path": "Maxgravity.xcodeproj/project.pbxproj",
+      "isDir": false,
+      "sizeBytes": 13549
+    },
+    {
+      "path": "README.md",
+      "isDir": false,
+      "sizeBytes": 2088
+    },
+    {
+      "path": "scripts",
+      "isDir": true
+    },
+    {
+      "path": "scripts/check-ios-static.mjs",
+      "isDir": false,
+      "sizeBytes": 1178
+    },
+    {
+      "path": "scripts/check-private-api.mjs",
+      "isDir": false,
+      "sizeBytes": 1212
+    }
+  ]
+}

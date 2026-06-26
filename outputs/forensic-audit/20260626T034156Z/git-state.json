@@ -1,0 +1,44 @@
+{
+  "head": "3592836015eab013bde715df2447dc954a4ab466",
+  "branch": "main",
+  "status": "clean (except untracked bridge/bridge/ directory)",
+  "untracked": [
+    "bridge/bridge/",
+    "bridge/bridge/.local/",
+    "bridge/bridge/.local/tasks.json"
+  ],
+  "modified": [],
+  "staged": [],
+  "history": [
+    {
+      "commit": "3592836015eab013bde715df2447dc954a4ab466",
+      "author": "ahmedcherno40-ai <ahmedcherno40@gmail.com>",
+      "date": "2026-06-26T06:12:28+03:00",
+      "message": "Wire live Antigravity models and bridge tools"
+    },
+    {
+      "commit": "3cd914533f15de28c8b3a4638a70b7714f837a21",
+      "author": "ahmedcherno40-ai <ahmedcherno40@gmail.com>",
+      "date": "2026-06-25T20:53:41+03:00",
+      "message": "Fix mobile pairing transport and QR parsing"
+    },
+    {
+      "commit": "68afcd80118b0739a17d04ecde4333e091b67c6f",
+      "author": "ahmedcherno40-ai <ahmedcherno40@gmail.com>",
+      "date": "2026-06-25T20:27:47+03:00",
+      "message": "fix(bridge): bind server to 0.0.0.0 for external network reachability and populate real local IP address"
+    },
+    {
+      "commit": "4167208d16405c225415e21815a5b6c8932d0525",
+      "author": "ahmedcherno40-ai <ahmedcherno40@gmail.com>",
+      "date": "2026-06-25T20:25:05+03:00",
+      "message": "feat(bridge): print pairing session details to console"
+    },
+    {
+      "commit": "60ae295a0a6c0d13e22c832cbf1ec982a55f0835",
+      "author": "ahmedcherno40-ai <ahmedcherno40@gmail.com>",
+      "date": "2026-06-25T20:22:30+03:00",
+      "message": "fix(ios): support fractional seconds in ISO-8601 date decoding for QR scanner and API client"
+    }
+  ]
+}

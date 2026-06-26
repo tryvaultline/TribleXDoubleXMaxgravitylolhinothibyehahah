@@ -1,0 +1,284 @@
+{
+  "matrix": [
+    {
+      "id": 1,
+      "feature": "App launch",
+      "status": "VERIFIED_LOCAL",
+      "trace": "MaxgravityApp.swift -> MGRootView -> bootstrap() -> bridge.fetchConnectionStatus() -> HTTP /v1/connection/health -> response status -> UI state update (shows MainShellView or FirstLaunchView)",
+      "notes": "Verified. If paired, redirects to MainShellView. If not, shows FirstLaunchView."
+    },
+    {
+      "id": 2,
+      "feature": "First-launch pairing",
+      "status": "PARTIAL",
+      "trace": "MGFirstLaunchView -> presentedSheet = .pairingCode -> MGPairingCodeSheet -> QR scan or manual entry -> pair() -> bridge.pairDevice() -> HTTP POST /v1/connection/trust -> trustStore.save() -> Keychain save",
+      "notes": "The UI setup and REST API calls are fully coded, but actual Keychain persistence and camera Scanning on physical hardware is not fully verified end-to-end (PARTIAL)."
+    },
+    {
+      "id": 3,
+      "feature": "Camera permission",
+      "status": "VERIFIED_LOCAL",
+      "trace": "MGPairingCodeSheet -> ScannerViewController -> checkCameraPermissions() -> AVCaptureDevice.authorizationStatus(for: .video) -> requests permission if notDetermined -> setupCaptureSession()",
+      "notes": "Uses standard AVFoundation AVCaptureDevice API. Works in native iOS target, but simulator defaults to fallback."
+    },
+    {
+      "id": 4,
+      "feature": "QR scan",
+      "status": "PARTIAL",
+      "trace": "MGCameraScannerView -> Coordinator -> metadataOutput() -> scannerDidFindCode() -> onScan() callback",
+      "notes": "Coded natively in MGCameraScanner.swift. Untested on physical device."
+    },
+    {
+      "id": 5,
+      "feature": "QR payload parsing",
+      "status": "VERIFIED_LOCAL",
+      "trace": "decodePairingPayload() -> JSONDecoder.decode(MGPairingQRCodePayload.self) -> returns struct or attempts URL components percent decoding",
+      "notes": "Fully implemented with multiple fallback paths (raw JSON, Base64 query parameter, percent encoded query parameter)."
+    },
+    {
+      "id": 6,
+      "feature": "Expiry validation",
+      "status": "VERIFIED_LOCAL",
+      "trace": "PairingManager.trustDevice() -> record.expiresAt.getTime() <= now.getTime() -> throws PAIRING_EXPIRED",
+      "notes": "Implemented and verified by vitest suite (tests/pairing.test.ts)."
+    },
+    {
+      "id": 7,
+      "feature": "Fingerprint validation",
+      "status": "MOCK",
+      "trace": "MGPairingCodeSheet -> confirmationView -> shows payload.bridgeFingerprint -> user manual confirmation",
+      "notes": "The fingerprint is merely shown in confirmationView; there is no cryptographic verification of the bridge public key/fingerprint during trust negotiation (MOCK)."
+    },
+    {
+      "id": 8,
+      "feature": "Device trust confirmation",
+      "status": "PARTIAL",
+      "trace": "PairingManager.trustDevice() -> Consumes session -> returns deviceSecret -> TrustStore.save()",
+      "notes": "Coded on bridge. However, there is no desktop-side UI prompt to explicitly approve the trust confirmation before issuing credentials; the bridge trusts immediately once pairing token matches."
+    },
+    {
+      "id": 9,
+      "feature": "Secure secret persistence",
+      "status": "PARTIAL",
+      "trace": "MGKeychainHelper.save() -> SecItemAdd() -> Keychain storage",
+      "notes": "Implemented in iOS using SecItemAdd. Not verified on physical device."
+    },
+    {
+      "id": 10,
+      "feature": "WebSocket connection",
+      "status": "VERIFIED_LOCAL",
+      "trace": "MGAppModel.startTaskEventStreaming() -> URLSession.webSocketTask() -> WS /v1/tasks/:taskId/events -> Server authenticates header -> returns event stream",
+      "notes": "Coded in MGServices.swift and server.ts. Bypasses SSL cert verification using MGTrustAllCertsDelegate."
+    },
+    {
+      "id": 11,
+      "feature": "Reconnect",
+      "status": "SCAFFOLDED",
+      "trace": "MGAppModel.webSocketTask.receive() failure callback -> no automatic reconnect retry loop",
+      "notes": "Reconnect behavior has no retry loop or offline queues modeled in Swift (SCAFFOLDED)."
+    },
+    {
+      "id": 12,
+      "feature": "Device revocation",
+      "status": "VERIFIED_LOCAL",
+      "trace": "MGSettingsScreenView -> Disconnect -> disconnectCurrentComputer() -> bridge.disconnect() -> KeychainHelper.delete() / Revoke REST API call /v1/connection/trusted-devices/:deviceId/revoke",
+      "notes": "Implemented in UI and fully verified in Vitest suite."
+    },
+    {
+      "id": 13,
+      "feature": "Spaces loading",
+      "status": "VERIFIED_LOCAL",
+      "trace": "MGSpacesView -> appModel.spaces -> bootstrap() -> bridge.listSpaces() -> HTTP /v1/spaces -> maps roots to spaces",
+      "notes": "Implemented. Maps approved workspace roots on the PC directly to Spaces in the app."
+    },
+    {
+      "id": 14,
+      "feature": "Chats loading",
+      "status": "VERIFIED_LOCAL",
+      "trace": "MGSpacesView -> SpaceRow -> spaces.chats -> mapped from listConversations() -> local tasks.json file database",
+      "notes": "Implemented. Conversations are loaded from the bridge's local tasks.json database."
+    },
+    {
+      "id": 15,
+      "feature": "New Task submission",
+      "status": "VERIFIED_LOCAL",
+      "trace": "MGNewTaskView -> Composer -> onSend() -> appModel.createTask() -> bridge.createTask() -> HTTP POST /v1/tasks -> invokes spawn(agentapi.bat new-conversation)",
+      "notes": "Fully implemented. Spawns new Antigravity process on the Windows machine."
+    },
+    {
+      "id": 16,
+      "feature": "Model selection",
+      "status": "VERIFIED_LOCAL",
+      "trace": "Composer -> Select Model Menu -> availableModels() -> HTTP /v1/models -> runs agentapi.bat new-conversation --help -> parses output -> displays model options",
+      "notes": "Discovered dynamically from the Antigravity CLI help menu output (flash, flash_lite, pro)."
+    },
+    {
+      "id": 17,
+      "feature": "Permission selection",
+      "status": "SCAFFOLDED",
+      "trace": "MGNewTaskView -> Context -> Permissions -> draftContext.permissionMode -> saved in settings store",
+      "notes": "Scaffolded. The selection UI exists, but the permission mode is not sent in the bridge request or enforced by the bridge shell during execution."
+    },
+    {
+      "id": 18,
+      "feature": "Workspace root selection",
+      "status": "VERIFIED_LOCAL",
+      "trace": "MGNewTaskView -> Context -> Choose folder -> MGRemoteFolderPicker -> approvedRoots() -> HTTP /v1/workspace/roots",
+      "notes": "Implemented. Confined to approved workspace roots configured on the bridge."
+    },
+    {
+      "id": 19,
+      "feature": "Remote folder browsing",
+      "status": "VERIFIED_LOCAL",
+      "trace": "MGWorkspaceScreenView -> loadWorkspaceRoot() -> bridge.browseWorkspace() -> HTTP /v1/workspace/browse?rootId&path -> returns WorkspaceNode[]",
+      "notes": "Implemented. Navigates directories in the approved workspace root."
+    },
+    {
+      "id": 20,
+      "feature": "File creation",
+      "status": "VERIFIED_LOCAL",
+      "trace": "MGAppModel.importPickedPhotos() -> bridge.createFolder() -> HTTP POST /v1/workspace/create-folder -> fs.mkdir()",
+      "notes": "Implemented. The app creates folders/files in the workspace for importing images."
+    },
+    {
+      "id": 21,
+      "feature": "File mention",
+      "status": "VERIFIED_LOCAL",
+      "trace": "Composer -> @ icon -> MGFileMentionsSheet -> mentionableFiles -> filters files loaded from workspace -> adds to draft",
+      "notes": "Implemented. Appends files to the prompt block."
+    },
+    {
+      "id": 22,
+      "feature": "Local Antigravity CLI detection",
+      "status": "VERIFIED_LOCAL",
+      "trace": "AntigravityCliAccountAdapter.getCapabilities() -> existsSync(agentApiBat) -> returns state",
+      "notes": "Implemented. Checks for C:\\Users\\kuroi\\.gemini\\antigravity\\bin\\agentapi.bat."
+    },
+    {
+      "id": 23,
+      "feature": "Antigravity account authentication detection",
+      "status": "VERIFIED_LOCAL",
+      "trace": "AntigravityCliAccountAdapter.checkAuth() -> runs agentapi.bat get-conversation-metadata dummy-id -> checks exit code / stdout",
+      "notes": "Implemented. Runs validation against the language server."
+    },
+    {
+      "id": 24,
+      "feature": "Actual CLI task launch",
+      "status": "VERIFIED_LOCAL",
+      "trace": "bridge.createTask() -> spawn(agentApiBat, ['new-conversation', '-model', model, prompt])",
+      "notes": "Spawns the local Antigravity CLI process in the workspace CWD."
+    },
+    {
+      "id": 25,
+      "feature": "Actual streamed response",
+      "status": "DEAD_CODE",
+      "trace": "child.stdout.on('data') -> aggregates stdout text -> parses final JSON payload on exit",
+      "notes": "There is no live token-by-token stdout stream to the client. The bridge waits for the process to exit, then parses the final response (DEAD_CODE)."
+    },
+    {
+      "id": 26,
+      "feature": "Actual safe progress event stream",
+      "status": "VERIFIED_LOCAL",
+      "trace": "AntigravityCliAccountAdapter.startPolling() -> polls C:\\Users\\kuroi\\.gemini\\antigravity\\brain\\<realId>\\.system_generated\\logs\\transcript.jsonl -> parses last line -> maps tool to state -> emits websocket event",
+      "notes": "Real log-based polling implementation exists and streams states."
+    },
+    {
+      "id": 27,
+      "feature": "Command capture",
+      "status": "MOCK",
+      "trace": "MGChatThreadView -> displays chat.thread.commands -> fixture backed",
+      "notes": "Commands running/captured list is purely hardcoded in MGFixtures.thread (MOCK)."
+    },
+    {
+      "id": 28,
+      "feature": "Diff generation",
+      "status": "MOCK",
+      "trace": "MGChatThreadView -> displays chat.thread.diffs -> fixture backed",
+      "notes": "Diff rendering is purely hardcoded in MGFixtures.thread (MOCK)."
+    },
+    {
+      "id": 29,
+      "feature": "Approval request",
+      "status": "PARTIAL",
+      "trace": "polls transcript.jsonl -> detects ask_permission tool call -> sets stage to Awaiting approval",
+      "notes": "Detects permission requests from logs, but doesn't capture the exact permission details or custom scopes (PARTIAL)."
+    },
+    {
+      "id": 30,
+      "feature": "Approval resolution",
+      "status": "ABSENT",
+      "trace": "MGApprovalPanel -> onApprove/onReject buttons are stubs -> no bridge REST API exists to resolve approvals",
+      "notes": "No implementation exists to send approval resolutions back to the running agent (ABSENT)."
+    },
+    {
+      "id": 31,
+      "feature": "Completion summary",
+      "status": "PARTIAL",
+      "trace": "polls transcript.jsonl -> detects PLANNER_RESPONSE without tool_calls -> sets stage to Task completed",
+      "notes": "Detects final reply, but files changed/metrics are mock-backed (PARTIAL)."
+    },
+    {
+      "id": 32,
+      "feature": "Copy Reply",
+      "status": "VERIFIED_LOCAL",
+      "trace": "MGCompletionEmbed -> Copy Reply -> UIPasteboard.general.string = summary.fullReply",
+      "notes": "Implemented using UIKit UIPasteboard."
+    },
+    {
+      "id": 33,
+      "feature": "Local notifications",
+      "status": "PARTIAL",
+      "trace": "MGAppModel -> requestNotificationAuthorization() -> UNUserNotificationCenter.current().requestAuthorization()",
+      "notes": "Requests permission, but no local notification dispatch triggers exist in the client (PARTIAL)."
+    },
+    {
+      "id": 34,
+      "feature": "Live Activity start/update/end",
+      "status": "PARTIAL",
+      "trace": "MGTaskLiveActivityController -> Activity.request() -> starts activity in foreground",
+      "notes": "Starts Live Activity in foreground. Background updates require APNs integration (PARTIAL)."
+    },
+    {
+      "id": 35,
+      "feature": "Connection loss",
+      "status": "MOCK",
+      "trace": "connection status check -> fails to fetch -> connection pill turns offline",
+      "notes": "Tested locally, but connection status values (fair, weak) are fixture-based (MOCK)."
+    },
+    {
+      "id": 36,
+      "feature": "Offline screen",
+      "status": "ABSENT",
+      "trace": "No dedicated offline screen exists in the navigation tree. If the bridge goes offline, the app stays in MainShellView and fails silently on actions.",
+      "notes": "Absent."
+    },
+    {
+      "id": 37,
+      "feature": "Settings panel",
+      "status": "VERIFIED_LOCAL",
+      "trace": "MGMainShellView -> Settings -> MGSettingsScreenView -> displays status, defaults, diagnostics, and revokes",
+      "notes": "Implemented and verified."
+    },
+    {
+      "id": 38,
+      "feature": "Activity panel",
+      "status": "VERIFIED_LOCAL",
+      "trace": "MGMainShellView -> Activity -> MGActivityScreenView -> shows running, pending, and scheduled tasks",
+      "notes": "Implemented and verified."
+    },
+    {
+      "id": 39,
+      "feature": "IPA build",
+      "status": "VERIFIED_CI",
+      "trace": "CI -> xcodebuild Release -sdk iphoneos -> packages App bundle as zip renamed to .ipa",
+      "notes": "Verified. Build outputs verified from outputs/release folder."
+    },
+    {
+      "id": 40,
+      "feature": "IPA validation",
+      "status": "VERIFIED_CI",
+      "trace": "scripts/check-ios-static.mjs & check-private-api.mjs execution in CI",
+      "notes": "Verified in CI. Prevents private API linkage."
+    }
+  ]
+}

@@ -3,12 +3,14 @@ import Foundation
 import Observation
 import UserNotifications
 import Security
+import CryptoKit
 
 struct MGKeychainSession: Codable {
     let address: String
     let deviceId: String
     let deviceSecret: String
     let computerName: String
+    let bridgeFingerprint: String
 }
 
 struct MGKeychainHelper {
@@ -142,7 +144,7 @@ class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository,
             .replacingOccurrences(of: "wss://", with: "https://")
             .replacingOccurrences(of: "ws://", with: "http://")
         
-        guard let url = URL(string: "\(httpAddress)/v1/connection/trust") else {
+        guard let url = URL(string: "\(httpAddress)/v1/connection/trust/register") else {
             throw NSError(domain: "MGRealBridgeClient", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid bridge URL"])
         }
         
@@ -151,13 +153,15 @@ class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository,
             let token: String
             let deviceName: String
             let devicePublicKeyFingerprint: String
+            let platform: String
         }
         
         let reqData = TrustReq(
             sessionId: payload.sessionId,
             token: payload.token,
             deviceName: deviceName,
-            devicePublicKeyFingerprint: fingerprint
+            devicePublicKeyFingerprint: fingerprint,
+            platform: "iOS"
         )
         
         var request = URLRequest(url: url)
@@ -165,7 +169,7 @@ class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository,
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(reqData)
         
-        let urlSession = URLSession(configuration: .default, delegate: MGTrustAllCertsDelegate(), delegateQueue: nil)
+        let urlSession = URLSession(configuration: .default, delegate: MGTrustPinningDelegate(expectedFingerprint: payload.bridgeFingerprint), delegateQueue: nil)
         let (data, response) = try await urlSession.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -177,25 +181,55 @@ class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository,
             throw NSError(domain: "MGRealBridgeClient", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: errString])
         }
         
-        struct TrustResp: Codable {
+        struct RegisterResp: Codable {
+            let status: String
+            let pendingDeviceId: String
+        }
+        
+        let regResp = try JSONDecoder().decode(RegisterResp.self, from: data)
+        let pendingId = regResp.pendingDeviceId
+        
+        // Polling loop
+        guard let statusUrl = URL(string: "\(httpAddress)/v1/connection/trust/status?pendingDeviceId=\(pendingId)") else {
+            throw NSError(domain: "MGRealBridgeClient", code: 500, userInfo: [NSLocalizedDescriptionKey: "Invalid status URL"])
+        }
+        var statusRequest = URLRequest(url: statusUrl)
+        statusRequest.httpMethod = "GET"
+        
+        struct StatusResp: Codable {
             struct Device: Codable {
                 let id: String
                 let name: String
             }
-            let device: Device
-            let deviceSecret: String
+            let status: String
+            let device: Device?
+            let deviceSecret: String?
         }
         
-        let resp = try JSONDecoder().decode(TrustResp.self, from: data)
-        let newSession = MGKeychainSession(
-            address: payload.address,
-            deviceId: resp.device.id,
-            deviceSecret: resp.deviceSecret,
-            computerName: deviceName
-        )
-        
-        _ = MGKeychainHelper.save(newSession)
-        return newSession
+        while true {
+            let (statusData, statusResponse) = try await urlSession.data(for: statusRequest)
+            guard let statusHttpResponse = statusResponse as? HTTPURLResponse, statusHttpResponse.statusCode == 200 else {
+                throw NSError(domain: "MGRealBridgeClient", code: 401, userInfo: [NSLocalizedDescriptionKey: "Pairing was rejected or session expired."])
+            }
+            
+            let statusObj = try JSONDecoder().decode(StatusResp.self, from: statusData)
+            if statusObj.status == "approved", let dev = statusObj.device, let secret = statusObj.deviceSecret {
+                let newSession = MGKeychainSession(
+                    address: payload.address,
+                    deviceId: dev.id,
+                    deviceSecret: secret,
+                    computerName: dev.name,
+                    bridgeFingerprint: payload.bridgeFingerprint
+                )
+                _ = MGKeychainHelper.save(newSession)
+                return newSession
+            } else if statusObj.status == "rejected" {
+                throw NSError(domain: "MGRealBridgeClient", code: 403, userInfo: [NSLocalizedDescriptionKey: "Pairing request was rejected."])
+            }
+            
+            // Wait 2 seconds before polling again
+            try await Task.sleep(nanoseconds: 2_000_000_000)
+        }
     }
 
     private func performRequest<T: Decodable>(path: String, method: String = "GET", body: Data? = nil) async throws -> T {
@@ -217,7 +251,7 @@ class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository,
             request.httpBody = body
         }
         
-        let urlSession = URLSession(configuration: .default, delegate: MGTrustAllCertsDelegate(), delegateQueue: nil)
+        let urlSession = URLSession(configuration: .default, delegate: MGTrustPinningDelegate(expectedFingerprint: s.bridgeFingerprint), delegateQueue: nil)
         let (data, response) = try await urlSession.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -335,7 +369,11 @@ class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository,
                 )
             }
         } catch {
+            #if DEBUG
             return MGFixtures.models
+            #else
+            throw error
+            #endif
         }
     }
 
@@ -414,7 +452,11 @@ class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository,
     }
 
     func preparePairingSession() async throws -> MGPairingQRCodePayload {
+        #if DEBUG
         return MGFixtures.pairingPayload
+        #else
+        throw NSError(domain: "MGRealBridgeClient", code: 501, userInfo: [NSLocalizedDescriptionKey: "Client-side pairing preparation is unavailable in release mode."])
+        #endif
     }
 
     func createTask(spaceId: String, title: String, prompt: String, workspaceRoot: String, selectedModelId: String) async throws -> MGChatSummary {
@@ -489,15 +531,56 @@ class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository,
     }
 }
 
-class MGTrustAllCertsDelegate: NSObject, URLSessionDelegate {
+class MGTrustPinningDelegate: NSObject, URLSessionDelegate {
+    let expectedFingerprint: String
+    
+    init(expectedFingerprint: String) {
+        self.expectedFingerprint = expectedFingerprint.replacingOccurrences(of: ":", with: "").lowercased()
+    }
+    
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
-            if let serverTrust = challenge.protectionSpace.serverTrust {
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let serverTrust = challenge.protectionSpace.serverTrust else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        
+        if let certificates = SecTrustCopyCertificateChain(serverTrust) as? [SecCertificate],
+           let cert = certificates.first {
+            let data = SecCertificateCopyData(cert) as Data
+            let digest = SHA256.hash(data: data)
+            let fingerprint = digest.map { String(format: "%02x", $0) }.joined()
+            
+            if fingerprint.lowercased() == expectedFingerprint {
                 completionHandler(.useCredential, URLCredential(trust: serverTrust))
                 return
             }
         }
-        completionHandler(.performDefaultHandling, nil)
+        
+        completionHandler(.cancelAuthenticationChallenge, nil)
+    }
+}
+
+class MGManualPairingTrustDelegate: NSObject, URLSessionDelegate {
+    var retrievedFingerprint: String?
+    
+    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let serverTrust = challenge.protectionSpace.serverTrust else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        
+        if let certificates = SecTrustCopyCertificateChain(serverTrust) as? [SecCertificate],
+           let cert = certificates.first {
+            let data = SecCertificateCopyData(cert) as Data
+            let digest = SHA256.hash(data: data)
+            retrievedFingerprint = digest.map { String(format: "%02x", $0) }.joined()
+            completionHandler(.useCredential, URLCredential(trust: serverTrust))
+            return
+        }
+        
+        completionHandler(.cancelAuthenticationChallenge, nil)
     }
 }
 
@@ -517,7 +600,7 @@ struct MGMockBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository
     
     func isPaired() -> Bool { false }
     func pairDevice(payload: MGPairingQRCodePayload, deviceName: String, fingerprint: String) async throws -> MGKeychainSession {
-        return MGKeychainSession(address: "", deviceId: "", deviceSecret: "", computerName: "")
+        return MGKeychainSession(address: "", deviceId: "", deviceSecret: "", computerName: "", bridgeFingerprint: "")
     }
     func createTask(spaceId: String, title: String, prompt: String, workspaceRoot: String, selectedModelId: String) async throws -> MGChatSummary {
         return MGFixtures.spaces[0].chats[0]
@@ -595,14 +678,20 @@ final class MGAppModel {
     var presentedFullScreen: MGFullScreenDestination?
 
     var connection: MGComputerStatus?
+    #if DEBUG
     var trustedDevices: [MGTrustedDevice] = MGFixtures.trustedDevices
-    var spaces: [MGSpaceSummary] = []
-    var activityBuckets: [MGActivityBucket] = []
-    var schedules: [MGScheduledTask] = []
-    var models: [MGModelOption] = []
-    var remoteRoots: [MGRemoteFileNode] = []
-    var capabilities: [MGBridgeCapability] = []
     var pairingPayload: MGPairingQRCodePayload = MGFixtures.pairingPayload
+    #else
+    var trustedDevices: [MGTrustedDevice] = []
+    var pairingPayload: MGPairingQRCodePayload = MGPairingQRCodePayload(
+        sessionId: "",
+        address: "",
+        token: "",
+        bridgeFingerprint: "",
+        expiresAt: Date(),
+        bridgeVersion: ""
+    )
+    #endif
     var notificationPreferences = MGNotificationPreferences()
     var notificationsAuthorized = false
     var liveActivityDiagnostics = "Not started"
@@ -677,7 +766,9 @@ final class MGAppModel {
                 capabilities = []
                 plugins = []
             }
+            #if DEBUG
             pairingPayload = try await bridge.preparePairingSession()
+            #endif
         } catch {
             liveActivityDiagnostics = "Bridge bootstrap failed: \(error.localizedDescription)"
         }
@@ -940,60 +1031,6 @@ final class MGAppModel {
     }
 
     func addMentionedFile(_ path: String) {
-        guard !draftContext.mentionedFiles.contains(path) else { return }
-        draftContext.mentionedFiles.append(path)
-    }
-
-    func removeMentionedFile(_ path: String) {
-        draftContext.mentionedFiles.removeAll { $0 == path }
-    }
-
-    func steerApproval(requestID: String, guidance: String) {
-        guard !guidance.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-
-        for spaceIndex in spaces.indices {
-            for chatIndex in spaces[spaceIndex].chats.indices where spaces[spaceIndex].chats[chatIndex].thread.approval?.id == requestID {
-                let chatId = spaces[spaceIndex].chats[chatIndex].id
-                let message = MGThreadMessage(
-                    id: UUID().uuidString,
-                    role: .user,
-                    body: guidance,
-                    timestamp: .now,
-                    delivered: true,
-                    attachments: []
-                )
-                spaces[spaceIndex].chats[chatIndex].thread.messages.append(message)
-                spaces[spaceIndex].chats[chatIndex].thread.approval = nil
-                spaces[spaceIndex].chats[chatIndex].lastActivity = Date()
-                
-                Task {
-                    try? await bridge.sendMessage(taskId: chatId, prompt: guidance, workspaceRoot: draftContext.workingFolder)
-                }
-                return
-            }
-        }
-    }
-
-    func startTaskEventStreaming(taskId: String) {
-        webSocketTask?.cancel(with: .goingAway, reason: nil)
-        
-        guard let s = MGKeychainHelper.load() else { return }
-        let wsAddress = s.address
-            .replacingOccurrences(of: "https://", with: "wss://")
-            .replacingOccurrences(of: "http://", with: "ws://")
-        
-        guard let url = URL(string: "\(wsAddress)/v1/tasks/\(taskId)/events") else { return }
-        
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(s.deviceSecret)", forHTTPHeaderField: "Authorization")
-        request.setValue(s.deviceId, forHTTPHeaderField: "x-mg-device-id")
-        
-        let urlSession = URLSession(configuration: .default, delegate: MGTrustAllCertsDelegate(), delegateQueue: nil)
-        let wsTask = urlSession.webSocketTask(with: request)
-        self.webSocketTask = wsTask
-        wsTask.resume()
-        
-        listenForWsEvents(wsTask, taskId: taskId)
     }
 
     func stopTaskEventStreaming() {

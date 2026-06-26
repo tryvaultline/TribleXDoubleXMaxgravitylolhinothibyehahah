@@ -2,25 +2,24 @@ import { exec, spawn } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getLocalIp } from "./security/network.js";
 import os from "node:os";
 import { AntigravityCliAccountAdapter } from "./antigravity-adapter.js";
+import { FileTrustStore } from "./trust-store.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(here, "..", "..");
 const localDir = join(projectRoot, "bridge", ".local");
 const pidFile = join(localDir, "bridge.pid");
 const port = Number(process.env.MAXGRAVITY_BRIDGE_PORT ?? "59443");
+const trustStorePath = process.env.MAXGRAVITY_TRUST_STORE ?? join(localDir, "trusted-devices.json");
+const trustStore = new FileTrustStore(trustStorePath);
 
-function getLocalIp(): string {
-  const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name] || []) {
-      if (iface.family === "IPv4" && !iface.internal) {
-        return iface.address;
-      }
-    }
-  }
-  return "127.0.0.1";
+function getStartupFilePath(): string | null {
+  if (process.platform !== "win32") return null;
+  const appData = process.env.APPDATA;
+  if (!appData) return null;
+  return join(appData, "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "maxgravity-bridge.bat");
 }
 
 async function isBridgeRunning(): Promise<boolean> {
@@ -71,9 +70,8 @@ async function getPairingSession() {
     throw new Error(`Failed to create pairing session: ${response.statusText}`);
   }
   const payload = await response.json() as any;
-  // Override localhost address with real local IP for network accessibility.
-  // The bridge currently serves plain HTTP/WebSocket, not TLS.
-  payload.address = `ws://${localIp}:${port}`;
+  // Override address to LAN HTTPS
+  payload.address = `wss://${localIp}:${port}`;
   return payload;
 }
 
@@ -90,10 +88,11 @@ async function pair() {
     console.log(`Local IP:      ${localIp}`);
     console.log(`Session ID:    ${session.sessionId}`);
     console.log(`Token:         ${session.token}`);
+    console.log(`Fingerprint:   ${session.bridgeFingerprint}`);
     console.log(`Expires At:    ${session.expiresAt}`);
     console.log("===============================\n");
     
-    // Generate static HTML pairing page
+    // Generate static HTML pairing page with pending approval loop
     const htmlContent = `
 <!DOCTYPE html>
 <html>
@@ -101,7 +100,7 @@ async function pair() {
   <title>Maxgravity Pairing Setup</title>
   <style>
     body {
-      background-color: #000;
+      background-color: #0d0d0e;
       color: #f6f5f2;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       display: flex;
@@ -112,57 +111,117 @@ async function pair() {
       margin: 0;
     }
     .card {
-      background-color: #1a1a1c;
-      border: 1px solid rgba(255,255,255,0.09);
+      background-color: #161618;
+      border: 1px solid rgba(255,255,255,0.08);
       border-radius: 28px;
       padding: 40px;
-      width: 420px;
+      width: 440px;
       text-align: center;
-      box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+      backdrop-filter: blur(12px);
     }
     h1 {
       font-size: 28px;
       font-weight: 700;
-      margin: 10px 0;
+      margin: 10px 0 20px 0;
+      background: linear-gradient(135deg, #ffffff 0%, #a1a1a5 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
     .computer {
-      font-size: 14px;
-      color: rgba(255,255,255,0.66);
-      background-color: rgba(255,255,255,0.06);
-      padding: 6px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.7);
+      background-color: rgba(255,255,255,0.07);
+      padding: 6px 14px;
       border-radius: 20px;
       display: inline-block;
       margin-bottom: 20px;
+      border: 1px solid rgba(255,255,255,0.05);
     }
     .qr-container {
       background-color: #fff;
       padding: 20px;
-      border-radius: 20px;
+      border-radius: 24px;
       display: inline-block;
       margin: 20px 0;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
     }
     .countdown {
       font-size: 15px;
-      color: #f4d029;
+      color: #ffd000;
       font-weight: 600;
+      margin-bottom: 10px;
     }
     .status {
+      margin-top: 10px;
+      font-size: 14px;
+      color: rgba(255,255,255,0.5);
+    }
+    .pending-section {
+      display: none;
+      text-align: left;
       margin-top: 20px;
-      font-size: 15px;
-      color: rgba(255,255,255,0.66);
+    }
+    .device-card {
+      background-color: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 18px;
+      padding: 20px;
+      margin-bottom: 15px;
+    }
+    .btn {
+      padding: 10px 20px;
+      border-radius: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+    .btn-approve {
+      background: linear-gradient(135deg, #30d158 0%, #248a3d 100%);
+      color: #fff;
+      margin-right: 10px;
+    }
+    .btn-approve:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+    .btn-reject {
+      background-color: rgba(255, 255, 255, 0.08);
+      color: #ff453a;
+      border: 1px solid rgba(255, 69, 58, 0.2);
+    }
+    .btn-reject:hover {
+      background-color: rgba(255, 69, 58, 0.1);
+    }
+    .actions {
+      display: flex;
+      margin-top: 15px;
     }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="computer">${computerName} (${localIp})</div>
-    <h1>Connect Maxgravity</h1>
-    <p style="font-size: 14px; color: rgba(255,255,255,0.66);">Scan this QR code from the Maxgravity app on your iPhone.</p>
     
-    <div class="qr-container" id="qrcode"></div>
-    
-    <div class="countdown" id="countdown">Token expires in 5:00</div>
-    <div class="status" id="status">Waiting for iPhone scan...</div>
+    <div id="qr-section">
+      <h1>Connect Maxgravity</h1>
+      <p style="font-size: 14px; color: rgba(255,255,255,0.6); line-height: 1.5;">Scan this QR code from the Maxgravity app on your iPhone.</p>
+      
+      <div class="qr-container" id="qrcode"></div>
+      
+      <div class="countdown" id="countdown">Token expires in 5:00</div>
+      <div style="font-size:12px; color: rgba(255,255,255,0.4); margin-bottom: 10px;">Fingerprint: ${session.bridgeFingerprint}</div>
+      <div class="status" id="status">Waiting for iPhone scan...</div>
+    </div>
+
+    <div id="pending-section" class="pending-section">
+      <h2 style="font-size: 20px; margin-top: 0; margin-bottom: 10px;">Approval Required</h2>
+      <p style="font-size: 13px; color: rgba(255,255,255,0.6); margin-bottom: 20px;">Confirm that the fingerprint on your iPhone matches the suffix below.</p>
+      <div id="pending-container"></div>
+    </div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -185,7 +244,7 @@ async function pair() {
       if (diff <= 0) {
         clearInterval(interval);
         document.getElementById("countdown").innerText = "Token Expired";
-        document.getElementById("countdown").style.color = "#ef3340";
+        document.getElementById("countdown").style.color = "#ff453a";
         document.getElementById("status").innerText = "Please regenerate the pairing QR code.";
       } else {
         const mins = Math.floor(diff / 60000);
@@ -194,17 +253,77 @@ async function pair() {
       }
     }, 1000);
 
-    // Poll trusted devices to see if new device was added
-    const deviceId = payload.sessionId;
-    const pollInterval = setInterval(async () => {
+    async function approveDevice(id) {
       try {
-        const res = await fetch("http://127.0.0.1:${port}/v1/connection/health");
+        const res = await fetch(\`http://127.0.0.1:${port}/v1/connection/pending-devices/\${id}/approve\`, { method: "POST" });
         if (res.ok) {
-          // Check if devices list has changed or connection status changed
-          // Since the client connects via trust endpoint, the desktop bridge saves trusted state
+          alert("Device approved successfully!");
+          location.reload();
+        } else {
+          alert("Failed to approve device.");
+        }
+      } catch (err) {
+        alert("Connection error: " + err.message);
+      }
+    }
+
+    async function rejectDevice(id) {
+      try {
+        const res = await fetch(\`http://127.0.0.1:${port}/v1/connection/pending-devices/\${id}/reject\`, { method: "POST" });
+        if (res.ok) {
+          alert("Device pairing request rejected.");
+          location.reload();
+        } else {
+          alert("Failed to reject device.");
+        }
+      } catch (err) {
+        alert("Connection error: " + err.message);
+      }
+    }
+
+    // Poll pending devices
+    setInterval(async () => {
+      try {
+        const res = await fetch("http://127.0.0.1:${port}/v1/connection/pending-devices");
+        if (res.ok) {
+          const devices = await res.json();
+          const qrSec = document.getElementById("qr-section");
+          const pendSec = document.getElementById("pending-section");
+          const container = document.getElementById("pending-container");
+          
+          if (devices && devices.length > 0) {
+            qrSec.style.display = "none";
+            pendSec.style.display = "block";
+            
+            let html = "";
+            for (const dev of devices) {
+              const remaining = Math.max(0, Math.floor((new Date(dev.expiresAt).getTime() - Date.now()) / 1000));
+              const mins = Math.floor(remaining / 60);
+              const secs = remaining % 60;
+              const timeStr = remaining > 0 ? \`\${mins}:\${secs < 10 ? '0' : ''}\${secs}\` : "Expired";
+              
+              html += \`
+                <div class="device-card">
+                  <div style="font-weight: 600; font-size: 16px; margin-bottom: 6px;">\${dev.deviceName}</div>
+                  <div style="font-size: 13px; color: rgba(255,255,255,0.6); margin-bottom: 4px;">Platform: \${dev.devicePlatform}</div>
+                  <div style="font-size: 13px; color: rgba(255,255,255,0.6); margin-bottom: 4px;">IP Address: \${dev.clientIp}</div>
+                  <div style="font-size: 13px; color: rgba(255,255,255,0.6); margin-bottom: 8px;">Fingerprint Suffix: ...\${dev.publicKeyFingerprint.slice(-8)}</div>
+                  <div style="font-size: 13px; color: #ffd000; margin-bottom: 12px;">Expires in: \${timeStr}</div>
+                  <div class="actions">
+                    <button class="btn btn-approve" onclick="approveDevice('\${dev.id}')">Approve</button>
+                    <button class="btn btn-reject" onclick="rejectDevice('\${dev.id}')">Reject</button>
+                  </div>
+                </div>
+              \`;
+            }
+            container.innerHTML = html;
+          } else {
+            qrSec.style.display = "block";
+            pendSec.style.display = "none";
+          }
         }
       } catch (err) {}
-    }, 3000);
+    }, 2000);
   </script>
 </body>
 </html>
@@ -214,7 +333,6 @@ async function pair() {
     writeFileSync(htmlPath, htmlContent);
     console.log(`Generated pairing page at: ${htmlPath}`);
 
-    // Open pairing page in default browser
     if (process.platform === "win32") {
       exec(`explorer.exe "${htmlPath}"`);
     } else {
@@ -274,6 +392,20 @@ async function doctor() {
   const workspaceAccessible = existsSync(projectRoot);
   console.log(`Workspace Access Status: ${workspaceAccessible ? "Accessible (Approved)" : "Inaccessible"}`);
   
+  // Windows startup diagnostics
+  const startupPath = getStartupFilePath();
+  const startupInstalled = startupPath ? existsSync(startupPath) : false;
+  console.log(`Automatic Startup Status: ${startupInstalled ? "Installed" : "Not Installed"}`);
+  
+  let deviceCount = 0;
+  try {
+    const devs = await trustStore.list();
+    deviceCount = devs.filter(d => !d.revokedAt).length;
+  } catch {
+    // Ignore error
+  }
+  console.log(`Trusted-device count: ${deviceCount}`);
+  
   console.log(`QR Readiness: ${running ? "Ready" : "Not Ready (Start the bridge first)"}`);
   console.log("API Key: No API key required");
   console.log("================================");
@@ -310,21 +442,14 @@ async function stop() {
 }
 
 async function devices() {
-  const running = await isBridgeRunning();
-  if (!running) {
-    console.log("Error: Bridge is offline. Start the bridge first.");
-    return;
-  }
-  // Try finding trust store file directly to list devices
-  const trustStoreFile = join(localDir, "trusted-devices.json");
-  if (!existsSync(trustStoreFile)) {
-    console.log("No trusted devices found.");
-    return;
-  }
   try {
-    const devices = JSON.parse(readFileSync(trustStoreFile, "utf8"));
+    const devs = await trustStore.list();
+    if (devs.length === 0) {
+      console.log("No trusted devices found.");
+      return;
+    }
     console.log("Trusted Devices:");
-    devices.forEach((d: any) => {
+    devs.forEach((d: any) => {
       console.log(`- ID: ${d.id}`);
       console.log(`  Name: ${d.name}`);
       console.log(`  Fingerprint: ${d.publicKeyFingerprint}`);
@@ -336,28 +461,59 @@ async function devices() {
       }
     });
   } catch (err: any) {
-    console.error("Failed to read trusted devices store:", err.message);
+    console.error("Failed to read trusted devices:", err.message);
   }
 }
 
 async function revokeDevice(deviceId: string) {
-  const trustStoreFile = join(localDir, "trusted-devices.json");
-  if (!existsSync(trustStoreFile)) {
-    console.log("No trusted devices found.");
-    return;
-  }
   try {
-    const devices = JSON.parse(readFileSync(trustStoreFile, "utf8"));
-    const device = devices.find((d: any) => d.id === deviceId);
-    if (!device) {
+    const revoked = await trustStore.revoke(deviceId, new Date());
+    if (revoked) {
+      console.log(`Device ID ${deviceId} was successfully revoked.`);
+    } else {
       console.log(`Device ID ${deviceId} not found.`);
-      return;
     }
-    device.revokedAt = new Date().toISOString();
-    writeFileSync(trustStoreFile, JSON.stringify(devices, null, 2));
-    console.log(`Device ${device.name} (ID: ${deviceId}) was successfully revoked.`);
   } catch (err: any) {
     console.error("Failed to revoke device:", err.message);
+  }
+}
+
+function installStartup() {
+  console.log("Installing Automatic Startup Shortcut...");
+  console.log("Explanation: This creates a batch command in your Windows Startup directory that runs 'npm run bridge:start' when you log in. It does not require Admin privileges.");
+  
+  const startupPath = getStartupFilePath();
+  if (!startupPath) {
+    console.error("Startup directory is only available on Windows HKCU/APPDATA environments.");
+    process.exit(1);
+  }
+  
+  const command = `@echo off\ncd /d "${join(projectRoot, "bridge")}"\nstart /b npm run bridge:start\n`;
+  try {
+    writeFileSync(startupPath, command, "utf8");
+    console.log(`Startup script written successfully to: ${startupPath}`);
+  } catch (err: any) {
+    console.error("Failed to write startup script:", err.message);
+  }
+}
+
+function removeStartup() {
+  console.log("Removing Automatic Startup Shortcut...");
+  const startupPath = getStartupFilePath();
+  if (!startupPath) {
+    console.error("Startup directory is only available on Windows.");
+    process.exit(1);
+  }
+  
+  if (existsSync(startupPath)) {
+    try {
+      unlinkSync(startupPath);
+      console.log("Startup shortcut removed successfully.");
+    } catch (err: any) {
+      console.error("Failed to remove startup script:", err.message);
+    }
+  } else {
+    console.log("Startup shortcut is not installed.");
   }
 }
 
@@ -383,6 +539,10 @@ if (cmd === "pair") {
     process.exit(1);
   }
   revokeDevice(id);
+} else if (cmd === "install-startup") {
+  installStartup();
+} else if (cmd === "remove-startup") {
+  removeStartup();
 } else {
   console.log("Unknown command.");
 }

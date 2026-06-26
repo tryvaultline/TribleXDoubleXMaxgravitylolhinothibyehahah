@@ -139,6 +139,10 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
       return { token, address };
     }
 
+    if (process.env.NODE_ENV === "production") {
+      return { token, address };
+    }
+
     // Fallback to logs
     const mainLogPath = join(this.realLogDir, "main.log");
     if (existsSync(mainLogPath)) {
@@ -502,6 +506,10 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
         },
         shell: process.platform === "win32"
       });
+      if (process.env.NODE_ENV === "production") {
+        this.updateTaskStatus(conversationId, "Running task");
+        this.emitStage(conversationId, "Running task", "Agent is executing follow-up content...");
+      }
       let stderr = "";
       child.stderr.on("data", (data) => {
         stderr += data.toString();
@@ -509,7 +517,15 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
       child.on("close", (code) => {
         if (code !== 0) {
           console.error(`agentapi send-message exited with code ${code}`);
-          this.emitStage(conversationId, "Task failed", compactError(stderr) || `Send-message exited with code ${code}.`);
+          const detail = compactError(stderr) || `Send-message exited with code ${code}.`;
+          this.updateTaskStatus(conversationId, "Task failed");
+          this.updateTask(conversationId, { lastError: detail });
+          this.emitStage(conversationId, "Task failed", detail);
+        } else {
+          if (process.env.NODE_ENV === "production") {
+            this.updateTaskStatus(conversationId, "Task completed");
+            this.emitStage(conversationId, "Task completed", "Follow-up message completed successfully.");
+          }
         }
       });
       return { status: "sent" };
@@ -531,6 +547,10 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
       },
       shell: process.platform === "win32"
     });
+    if (process.env.NODE_ENV === "production") {
+      this.updateTaskStatus(conversationId, "Running task");
+      this.emitStage(conversationId, "Running task", "Agent is planning and starting the new task...");
+    }
 
     let output = "";
     let stderr = "";
@@ -568,7 +588,13 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
           const task = tasks.find(t => t.id === conversationId);
           if (task) {
             task.realId = realId;
+            if (process.env.NODE_ENV === "production") {
+              task.status = "Task completed";
+            }
             this.saveTask(task);
+          }
+          if (process.env.NODE_ENV === "production") {
+            this.emitStage(conversationId, "Task completed", "New task completed successfully.");
           }
         }
       } catch (err) {
@@ -602,6 +628,9 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
   }
 
   private startPolling() {
+    if (process.env.NODE_ENV === "production") {
+      return;
+    }
     if (this.pollInterval) return;
 
     this.pollInterval = setInterval(() => {

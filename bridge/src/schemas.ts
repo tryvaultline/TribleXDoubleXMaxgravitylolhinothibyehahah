@@ -22,7 +22,8 @@ export const TrustDeviceRequestSchema = z.object({
   sessionId: z.string().min(16),
   token: z.string().min(24),
   deviceName: z.string().min(1).max(80),
-  devicePublicKeyFingerprint: z.string().min(8).max(128)
+  devicePublicKeyFingerprint: z.string().min(8).max(128),
+  platform: z.string().max(40).optional()
 });
 
 export const TrustedDeviceSchema = z.object({

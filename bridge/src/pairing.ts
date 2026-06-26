@@ -20,6 +20,19 @@ export interface TrustResult {
   deviceSecret: string;
 }
 
+export interface PendingDevice {
+  id: string;
+  sessionId: string;
+  deviceName: string;
+  devicePlatform: string;
+  clientIp: string;
+  publicKeyFingerprint: string;
+  expiresAt: Date;
+  status: "pending" | "approved" | "rejected";
+  deviceSecret?: string;
+  trustedRecord?: Omit<TrustedDevice, "secretHash">;
+}
+
 export class PairingError extends Error {
   constructor(
     message: string,
@@ -31,6 +44,8 @@ export class PairingError extends Error {
       | "DEVICE_REVOKED"
       | "DEVICE_UNKNOWN"
       | "DEVICE_SECRET_INVALID"
+      | "PENDING_DEVICE_NOT_FOUND"
+      | "PENDING_DEVICE_EXPIRED"
   ) {
     super(message);
   }
@@ -38,6 +53,7 @@ export class PairingError extends Error {
 
 export class PairingManager {
   private readonly sessions = new Map<string, PairingRecord>();
+  private readonly pendingDevices = new Map<string, PendingDevice>();
 
   constructor(
     private readonly trustStore: TrustStore,
@@ -90,7 +106,7 @@ export class PairingManager {
     throw new PairingError("No active pairing session was found.", "PAIRING_NOT_FOUND");
   }
 
-  async trustDevice(request: TrustDeviceRequest): Promise<TrustResult> {
+  registerPendingDevice(request: TrustDeviceRequest & { platform?: string }, clientIp: string): PendingDevice {
     const record = this.sessions.get(request.sessionId);
     if (!record) {
       throw new PairingError("Pairing session was not found.", "PAIRING_NOT_FOUND");
@@ -106,16 +122,75 @@ export class PairingManager {
       throw new PairingError("Pairing token is invalid.", "PAIRING_TOKEN_INVALID");
     }
 
+    const pendingId = randomUUID();
+    const expiresAt = new Date(now.getTime() + 5 * 60_000); // 5 min TTL
+    const pending: PendingDevice = {
+      id: pendingId,
+      sessionId: request.sessionId,
+      deviceName: request.deviceName,
+      devicePlatform: request.platform || "iOS",
+      clientIp,
+      publicKeyFingerprint: request.devicePublicKeyFingerprint,
+      expiresAt,
+      status: "pending"
+    };
+
+    this.pendingDevices.set(pendingId, pending);
+    return pending;
+  }
+
+  getPendingDeviceStatus(pendingDeviceId: string): PendingDevice {
+    const pending = this.pendingDevices.get(pendingDeviceId);
+    if (!pending) {
+      throw new PairingError("Pending device request not found.", "PENDING_DEVICE_NOT_FOUND");
+    }
+    const now = this.now();
+    if (pending.status === "pending" && pending.expiresAt.getTime() <= now.getTime()) {
+      pending.status = "rejected"; // Expired requests become rejected
+      throw new PairingError("Pending device request expired.", "PENDING_DEVICE_EXPIRED");
+    }
+    return pending;
+  }
+
+  listPendingDevices(): PendingDevice[] {
+    const now = this.now();
+    return Array.from(this.pendingDevices.values()).filter(
+      (p) => p.status === "pending" && p.expiresAt.getTime() > now.getTime()
+    );
+  }
+
+  async approvePendingDevice(pendingDeviceId: string): Promise<TrustResult> {
+    const pending = this.pendingDevices.get(pendingDeviceId);
+    if (!pending) {
+      throw new PairingError("Pending device request not found.", "PENDING_DEVICE_NOT_FOUND");
+    }
+    const now = this.now();
+    if (pending.expiresAt.getTime() <= now.getTime()) {
+      pending.status = "rejected";
+      throw new PairingError("Pending device request expired.", "PENDING_DEVICE_EXPIRED");
+    }
+    if (pending.status !== "pending") {
+      throw new PairingError("Pending device request is not pending.", "PAIRING_REPLAY");
+    }
+
+    const record = this.sessions.get(pending.sessionId);
+    if (!record || record.consumedAt) {
+      pending.status = "rejected";
+      throw new PairingError("Pairing session already consumed or missing.", "PAIRING_REPLAY");
+    }
+
     record.consumedAt = now;
     const deviceSecret = randomToken(32);
     const device: TrustedDevice = {
       id: randomUUID(),
-      name: request.deviceName,
-      publicKeyFingerprint: request.devicePublicKeyFingerprint,
+      name: pending.deviceName,
+      publicKeyFingerprint: pending.publicKeyFingerprint,
       pairedAt: now.toISOString(),
       secretHash: sha256(deviceSecret)
     };
+
     await this.trustStore.save(device);
+
     const publicDevice = {
       id: device.id,
       name: device.name,
@@ -123,7 +198,29 @@ export class PairingManager {
       pairedAt: device.pairedAt,
       revokedAt: device.revokedAt
     };
+
+    pending.status = "approved";
+    pending.deviceSecret = deviceSecret;
+    pending.trustedRecord = publicDevice;
+
     return { device: publicDevice, deviceSecret };
+  }
+
+  rejectPendingDevice(pendingDeviceId: string): void {
+    const pending = this.pendingDevices.get(pendingDeviceId);
+    if (pending) {
+      pending.status = "rejected";
+      const record = this.sessions.get(pending.sessionId);
+      if (record) {
+        record.consumedAt = this.now(); // Burn the pairing session
+      }
+    }
+  }
+
+  // Backwards compatibility helper for existing direct trust tests
+  async trustDevice(request: TrustDeviceRequest): Promise<TrustResult> {
+    const pending = this.registerPendingDevice(request, "127.0.0.1");
+    return this.approvePendingDevice(pending.id);
   }
 
   async authenticate(deviceId: string | undefined, deviceSecret: string | undefined): Promise<TrustedDevice> {

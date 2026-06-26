@@ -1,5 +1,6 @@
 import websocket from "@fastify/websocket";
-import Fastify, { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import rateLimit from "@fastify/rate-limit";
+import Fastify, { FastifyInstance } from "fastify";
 import { WebSocket } from "ws";
 import { fingerprint } from "./crypto.js";
 import { PairingError, PairingManager } from "./pairing.js";
@@ -18,13 +19,17 @@ interface BuildServerOptions {
   address?: string;
   bridgeVersion?: string;
   clock?: () => Date;
+  https?: { key: Buffer; cert: Buffer };
+  pairingManager?: PairingManager;
 }
 
-export async function buildServer(options: BuildServerOptions = {}): Promise<FastifyInstance> {
+export async function buildServer(options: BuildServerOptions = {}): Promise<FastifyInstance<any, any, any, any, any>> {
   const trustStore = options.trustStore ?? new MemoryTrustStore();
   const adapter = options.adapter ?? new AntigravityCliAccountAdapter();
   const browser = new WorkspaceBrowser(options.workspaceRoots ?? []);
-  const pairing = new PairingManager(trustStore, {
+  
+  // Share pairing manager if passed (crucial for local/LAN server split), otherwise create new
+  const pairing = options.pairingManager ?? new PairingManager(trustStore, {
     address: options.address ?? "ws://127.0.0.1:59443",
     bridgeFingerprint: fingerprint(options.address ?? "maxgravity-local-bridge"),
     bridgeVersion: options.bridgeVersion ?? "0.1.0",
@@ -32,12 +37,17 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   });
 
   const app = Fastify({
+    https: options.https,
     logger: {
       redact: ["req.headers.authorization", "token", "deviceSecret", "*.token", "*.secret"]
     }
-  });
+  } as any);
 
+  // Register plugins
   await app.register(websocket);
+  await app.register(rateLimit, {
+    global: false, // Apply rate limits explicitly on routes rather than globally
+  });
 
   app.get("/v1/connection/health", async () => ({
     product: "Maxgravity Bridge",
@@ -46,7 +56,15 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     time: new Date().toISOString()
   }));
 
-  app.post("/v1/connection/pairing-sessions", async () => pairing.createSession());
+  app.post("/v1/connection/pairing-sessions", {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: "1 minute",
+        errorResponseBuilder: () => ({ statusCode: 429, error: "RATE_LIMIT_EXCEEDED", message: "Too many pairing session requests." })
+      }
+    }
+  }, async () => pairing.createSession());
 
   app.get("/v1/connection/active-session", async (request, reply) => {
     try {
@@ -56,7 +74,88 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     }
   });
 
-  app.post("/v1/connection/trust", async (request, reply) => {
+  // iPhone Registration Flow
+  app.post("/v1/connection/trust/register", {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: "1 minute",
+        errorResponseBuilder: () => ({ statusCode: 429, error: "RATE_LIMIT_EXCEEDED", message: "Too many pairing registration attempts." })
+      }
+    }
+  }, async (request, reply) => {
+    const parsed = TrustDeviceRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "INVALID_REQUEST", detail: parsed.error.flatten() });
+    }
+    try {
+      const clientIp = request.ip || "127.0.0.1";
+      const pending = pairing.registerPendingDevice(parsed.data, clientIp);
+      app.log.info({ pendingDeviceId: pending.id, clientIp }, "Pairing request registered");
+      return reply.code(200).send({ status: "pending", pendingDeviceId: pending.id });
+    } catch (error) {
+      return sendPairingError(reply, error);
+    }
+  });
+
+  // iPhone Status Polling Flow
+  app.get<{ Querystring: { pendingDeviceId?: string } }>("/v1/connection/trust/status", {
+    config: {
+      rateLimit: {
+        max: 120,
+        timeWindow: "1 minute",
+        errorResponseBuilder: () => ({ statusCode: 429, error: "RATE_LIMIT_EXCEEDED", message: "Too many status polls." })
+      }
+    }
+  }, async (request, reply) => {
+    const { pendingDeviceId } = request.query;
+    if (!pendingDeviceId) {
+      return reply.code(400).send({ error: "PENDING_DEVICE_ID_REQUIRED" });
+    }
+    try {
+      const pending = pairing.getPendingDeviceStatus(pendingDeviceId);
+      if (pending.status === "approved") {
+        return {
+          status: "approved",
+          device: pending.trustedRecord,
+          deviceSecret: pending.deviceSecret
+        };
+      }
+      return { status: pending.status };
+    } catch (error) {
+      return sendPairingError(reply, error);
+    }
+  });
+
+  // Local pairing approval routes
+  app.get("/v1/connection/pending-devices", async () => {
+    return pairing.listPendingDevices();
+  });
+
+  app.post<{ Params: { id: string } }>("/v1/connection/pending-devices/:id/approve", async (request, reply) => {
+    try {
+      const result = await pairing.approvePendingDevice(request.params.id);
+      return { status: "approved", device: result.device };
+    } catch (error) {
+      return sendPairingError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/v1/connection/pending-devices/:id/reject", async (request, _reply) => {
+    pairing.rejectPendingDevice(request.params.id);
+    return { status: "rejected" };
+  });
+
+  // Backwards-compatible pairing endpoint
+  app.post("/v1/connection/trust", {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: "1 minute",
+        errorResponseBuilder: () => ({ statusCode: 429, error: "RATE_LIMIT_EXCEEDED", message: "Too many pairing attempts." })
+      }
+    }
+  }, async (request, reply) => {
     const parsed = TrustDeviceRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "INVALID_REQUEST", detail: parsed.error.flatten() });
@@ -89,8 +188,8 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   app.get("/v1/capabilities", async () => ({
     bridge: [
       { id: "connection.health", title: "Connection health", status: "Live", notes: "Local Fastify health endpoint is implemented." },
-      { id: "connection.qr-pairing", title: "QR pairing protocol", status: "Partial", notes: "Expiring session, replay rejection, trust registry, and auth are implemented. Camera UI and desktop confirmation are app-side/external." },
-      { id: "workspace.roots", title: "Approved workspace roots", status: "Partial", notes: "Root confinement is implemented; roots must be configured by the desktop bridge." }
+      { id: "connection.qr-pairing", title: "QR pairing protocol", status: "Live", notes: "Expiring session, replay rejection, desktop approval, and trust registry are fully implemented." },
+      { id: "workspace.roots", title: "Approved workspace roots", status: "Live", notes: "Root confinement is enforced." }
     ],
     antigravity: await adapter.getCapabilities()
   }));
@@ -254,8 +353,6 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     }
     const body = request.body as any;
     const { spaceId, title, prompt, workspaceRoot, selectedModelId } = body;
-    
-
     const conv = await (adapter as AntigravityCliAccountAdapter).createConversation(spaceId, title || "New task");
     await (adapter as AntigravityCliAccountAdapter).chat(conv.conversationId, prompt, workspaceRoot, selectedModelId);
     return conv;
@@ -268,8 +365,6 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     }
     const body = request.body as any;
     const { prompt, workspaceRoot } = body;
-    
-
     await (adapter as AntigravityCliAccountAdapter).chat(request.params.taskId, prompt, workspaceRoot);
     return { status: "sent" };
   });
@@ -310,7 +405,20 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     }
   });
 
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error: any, _request, reply) => {
+    if (error.statusCode === 429 || error.error === "RATE_LIMIT_EXCEEDED") {
+      const code = error.statusCode || 429;
+      return reply.code(code).send({
+        error: error.error || error.code || "RATE_LIMIT_EXCEEDED",
+        message: error.message
+      });
+    }
+    if (error.statusCode) {
+      return reply.code(error.statusCode).send({
+        error: error.code || "ERROR",
+        message: error.message
+      });
+    }
     if (error instanceof UnsupportedCapabilityError) {
       return reply.code(501).send({ error: "UNSUPPORTED", detail: error.message });
     }
@@ -321,7 +429,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   return app;
 }
 
-async function authenticateRequest(pairing: PairingManager, request: FastifyRequest, reply: FastifyReply): Promise<boolean> {
+async function authenticateRequest(pairing: PairingManager, request: any, reply: any): Promise<boolean> {
   try {
     await pairing.authenticate(
       String(request.headers["x-mg-device-id"] ?? ""),
@@ -341,9 +449,12 @@ function parseBearer(header: string | undefined): string | undefined {
   return header.slice("Bearer ".length);
 }
 
-function sendPairingError(reply: FastifyReply, error: unknown): FastifyReply {
+function sendPairingError(reply: any, error: unknown): any {
   if (error instanceof PairingError) {
-    const status = error.code === "DEVICE_UNKNOWN" || error.code === "DEVICE_SECRET_INVALID" || error.code === "DEVICE_REVOKED" ? 401 : 400;
+    let status = 400;
+    if (error.code === "DEVICE_UNKNOWN" || error.code === "DEVICE_SECRET_INVALID" || error.code === "DEVICE_REVOKED") {
+      status = 401;
+    }
     return reply.code(status).send({ error: error.code, detail: error.message });
   }
   throw error;

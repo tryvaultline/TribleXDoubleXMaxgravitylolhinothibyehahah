@@ -2,7 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..", "..");
-const ignoredDirs = new Set([".git", "node_modules", "dist", "outputs"]);
+const ignoredDirs = new Set([".git", "node_modules", "dist", "outputs", ".local"]);
 const patterns = [
   /gh[pousr]_[A-Za-z0-9_]{36,}/,
   /xox[baprs]-[A-Za-z0-9-]{20,}/,

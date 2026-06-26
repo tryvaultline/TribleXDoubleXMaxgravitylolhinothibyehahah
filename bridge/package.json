@@ -18,9 +18,12 @@
     "bridge:status": "tsx src/pair-tool.ts status",
     "bridge:stop": "tsx src/pair-tool.ts stop",
     "bridge:devices": "tsx src/pair-tool.ts devices",
-    "bridge:revoke-device": "tsx src/pair-tool.ts revoke"
+    "bridge:revoke-device": "tsx src/pair-tool.ts revoke",
+    "bridge:install-startup": "tsx src/pair-tool.ts install-startup",
+    "bridge:remove-startup": "tsx src/pair-tool.ts remove-startup"
   },
   "dependencies": {
+    "@fastify/rate-limit": "^11.0.0",
     "@fastify/websocket": "^11.2.0",
     "fastify": "^5.6.2",
     "pino": "^10.1.0",

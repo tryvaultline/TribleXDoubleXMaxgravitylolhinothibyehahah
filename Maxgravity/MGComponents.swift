@@ -32,8 +32,9 @@ struct MGGoogleAvatar: View {
     var size: CGFloat = 34
 
     var body: some View {
+        let radius = size * 0.3
         ZStack {
-            Circle()
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [
@@ -51,7 +52,10 @@ struct MGGoogleAvatar: View {
                 .foregroundStyle(.white)
         }
         .frame(width: size, height: size)
-        .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+        .overlay(
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+        )
     }
 }
 

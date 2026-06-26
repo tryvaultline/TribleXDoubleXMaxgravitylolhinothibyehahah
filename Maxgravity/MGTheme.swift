@@ -192,7 +192,7 @@ extension View {
 }
 
 private struct MGReadableSurfaceModifier: ViewModifier {
-    @Environment(\.accessibilityIncreaseContrast) private var increaseContrast
+    @Environment(\.accessibilityContrast) private var accessibilityContrast
     let cornerRadius: CGFloat
 
     func body(content: Content) -> some View {
@@ -224,7 +224,7 @@ private struct MGReadableSurfaceModifier: ViewModifier {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(increaseContrast ? MGTheme.strongBorder : MGTheme.border, lineWidth: 1)
+                    .stroke(accessibilityContrast == .high ? MGTheme.strongBorder : MGTheme.border, lineWidth: 1)
             )
             .shadow(color: MGTheme.shadow, radius: 18, y: 8)
     }
@@ -232,7 +232,7 @@ private struct MGReadableSurfaceModifier: ViewModifier {
 
 private struct MGInteractiveGlassModifier: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.accessibilityIncreaseContrast) private var increaseContrast
+    @Environment(\.accessibilityContrast) private var accessibilityContrast
     let cornerRadius: CGFloat
 
     func body(content: Content) -> some View {
@@ -247,7 +247,7 @@ private struct MGInteractiveGlassModifier: ViewModifier {
             }
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(increaseContrast ? Color.white.opacity(0.22) : MGTheme.strongBorder, lineWidth: 1)
+                    .stroke(accessibilityContrast == .high ? Color.white.opacity(0.22) : MGTheme.strongBorder, lineWidth: 1)
             }
             .shadow(color: MGTheme.shadow, radius: 20, y: 10)
     }

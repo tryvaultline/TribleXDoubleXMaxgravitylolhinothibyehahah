@@ -171,12 +171,14 @@ describe("3. Workspace Confinement", () => {
 });
 
 describe("4. TLS Certificates Fingerprinting", () => {
-  it("generates certs and extracts a valid SHA-256 fingerprint", () => {
+  it("generates certs with the selected LAN IP in SAN and extracts a valid SHA-256 fingerprint", () => {
     const tempDir = path.join(process.cwd(), ".local");
-    const certs = getOrCreateCert(tempDir);
+    const certs = getOrCreateCert(tempDir, ["192.168.1.4"]);
     expect(certs.cert).toBeDefined();
     expect(certs.key).toBeDefined();
-    expect(certs.fingerprint).toMatch(/^[0-9A-F]{64}$/); // SHA-256 fingerprint hex match
+    expect(certs.fingerprint).toMatch(/^[0-9A-F]{64}$/);
+    expect(certs.sanIps).toContain("192.168.1.4");
+    expect(certs.sanIps).toContain("127.0.0.1");
   });
 });
 

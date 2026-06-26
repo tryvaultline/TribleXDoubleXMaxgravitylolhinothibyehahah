@@ -13,6 +13,75 @@ struct MGKeychainSession: Codable {
     let bridgeFingerprint: String
 }
 
+enum MGTrustMismatchReason {
+    case pairing
+    case reconnect
+}
+
+enum MGBridgeTrustError: LocalizedError {
+    case invalidBridgeURL
+    case missingApprovedHost
+    case hostMismatch(expected: String, actual: String)
+    case certificateUnavailable(host: String)
+    case certificateValidationFailed(host: String)
+    case fingerprintMismatch(host: String, expectedSuffix: String, actualSuffix: String)
+    case identityChanged(host: String, expectedSuffix: String, actualSuffix: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidBridgeURL:
+            return "Secure connection failed."
+        case .missingApprovedHost:
+            return "Bridge host could not be verified."
+        case .hostMismatch:
+            return "Bridge host verification failed."
+        case .certificateUnavailable:
+            return "Bridge identity data is unavailable."
+        case .certificateValidationFailed:
+            return "Bridge identity could not be verified."
+        case .fingerprintMismatch:
+            return "Bridge fingerprint verification failed."
+        case .identityChanged:
+            return "Bridge identity changed."
+        }
+    }
+
+    var diagnosticCode: String {
+        switch self {
+        case .invalidBridgeURL: "INVALID_URL"
+        case .missingApprovedHost: "MISSING_HOST"
+        case .hostMismatch: "HOST_MISMATCH"
+        case .certificateUnavailable: "CERT_UNAVAILABLE"
+        case .certificateValidationFailed: "CERT_VALIDATION_FAILED"
+        case .fingerprintMismatch: "PIN_MISMATCH"
+        case .identityChanged: "IDENTITY_CHANGED"
+        }
+    }
+
+    var host: String? {
+        switch self {
+        case .hostMismatch(let expected, _): return expected
+        case .certificateUnavailable(let host),
+             .certificateValidationFailed(let host),
+             .fingerprintMismatch(let host, _, _),
+             .identityChanged(let host, _, _):
+            return host
+        case .invalidBridgeURL, .missingApprovedHost:
+            return nil
+        }
+    }
+
+    var certificateSuffix: String? {
+        switch self {
+        case .fingerprintMismatch(_, let expectedSuffix, let actualSuffix),
+             .identityChanged(_, let expectedSuffix, let actualSuffix):
+            return "\(expectedSuffix)/\(actualSuffix)"
+        default:
+            return nil
+        }
+    }
+}
+
 struct MGKeychainHelper {
     private static let service = "com.tryvaultline.maxgravity"
     private static let account = "paired-session"
@@ -139,6 +208,60 @@ class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository,
         MGKeychainHelper.delete()
     }
 
+    private func approvedHost(from address: String, fallback: String?) throws -> String {
+        if let fallback, !fallback.isEmpty {
+            return fallback
+        }
+
+        let httpAddress = address
+            .replacingOccurrences(of: "wss://", with: "https://")
+            .replacingOccurrences(of: "ws://", with: "http://")
+
+        guard let host = URL(string: httpAddress)?.host, !host.isEmpty else {
+            throw MGBridgeTrustError.missingApprovedHost
+        }
+
+        return host
+    }
+
+    private func pinnedData(for request: URLRequest, address: String, fallbackHost: String?, expectedFingerprint: String, mismatchReason: MGTrustMismatchReason) async throws -> (Data, URLResponse) {
+        let host = try approvedHost(from: address, fallback: fallbackHost)
+        let delegate = MGTrustPinningDelegate(
+            expectedHost: host,
+            expectedFingerprint: expectedFingerprint,
+            mismatchReason: mismatchReason
+        )
+        let urlSession = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+
+        do {
+            return try await urlSession.data(for: request)
+        } catch {
+            if let trustError = delegate.lastFailure {
+                throw trustError
+            }
+            throw error
+        }
+    }
+
+    private func inspectedData(for request: URLRequest, address: String, fallbackHost: String?) async throws -> (Data, URLResponse, String) {
+        let host = try approvedHost(from: address, fallback: fallbackHost)
+        let delegate = MGManualPairingTrustDelegate(expectedHost: host)
+        let urlSession = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard let fingerprint = delegate.retrievedFingerprint else {
+                throw MGBridgeTrustError.certificateUnavailable(host: host)
+            }
+            return (data, response, fingerprint)
+        } catch {
+            if let trustError = delegate.lastFailure {
+                throw trustError
+            }
+            throw error
+        }
+    }
+
     func pairDevice(payload: MGPairingQRCodePayload, deviceName: String, fingerprint: String) async throws -> MGKeychainSession {
         let httpAddress = payload.address
             .replacingOccurrences(of: "wss://", with: "https://")
@@ -150,7 +273,7 @@ class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository,
         
         struct TrustReq: Codable {
             let sessionId: String
-            let token: String
+            let token: String?
             let deviceName: String
             let devicePublicKeyFingerprint: String
             let platform: String
@@ -169,8 +292,13 @@ class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository,
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(reqData)
         
-        let urlSession = URLSession(configuration: .default, delegate: MGTrustPinningDelegate(expectedFingerprint: payload.bridgeFingerprint), delegateQueue: nil)
-        let (data, response) = try await urlSession.data(for: request)
+        let (data, response) = try await pinnedData(
+            for: request,
+            address: payload.address,
+            fallbackHost: payload.httpsHost,
+            expectedFingerprint: payload.bridgeFingerprint,
+            mismatchReason: .pairing
+        )
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NSError(domain: "MGRealBridgeClient", code: 500, userInfo: [NSLocalizedDescriptionKey: "Invalid response type"])
@@ -251,8 +379,13 @@ class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository,
             request.httpBody = body
         }
         
-        let urlSession = URLSession(configuration: .default, delegate: MGTrustPinningDelegate(expectedFingerprint: s.bridgeFingerprint), delegateQueue: nil)
-        let (data, response) = try await urlSession.data(for: request)
+        let (data, response) = try await pinnedData(
+            for: request,
+            address: s.address,
+            fallbackHost: nil,
+            expectedFingerprint: s.bridgeFingerprint,
+            mismatchReason: .reconnect
+        )
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NSError(domain: "MGRealBridgeClient", code: 500, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])
@@ -290,6 +423,9 @@ class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository,
                 liveBridge: .live
             )
         } catch {
+            if case MGBridgeTrustError.identityChanged = error {
+                disconnect()
+            }
             return nil
         }
     }
@@ -532,10 +668,15 @@ class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository,
 }
 
 class MGTrustPinningDelegate: NSObject, URLSessionDelegate {
+    let expectedHost: String
     let expectedFingerprint: String
+    let mismatchReason: MGTrustMismatchReason
+    var lastFailure: MGBridgeTrustError?
     
-    init(expectedFingerprint: String) {
+    init(expectedHost: String, expectedFingerprint: String, mismatchReason: MGTrustMismatchReason) {
+        self.expectedHost = expectedHost
         self.expectedFingerprint = expectedFingerprint.replacingOccurrences(of: ":", with: "").lowercased()
+        self.mismatchReason = mismatchReason
     }
     
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
@@ -545,24 +686,57 @@ class MGTrustPinningDelegate: NSObject, URLSessionDelegate {
             return
         }
         
-        if let certificates = SecTrustCopyCertificateChain(serverTrust) as? [SecCertificate],
-           let cert = certificates.first {
-            let data = SecCertificateCopyData(cert) as Data
-            let digest = SHA256.hash(data: data)
-            let fingerprint = digest.map { String(format: "%02x", $0) }.joined()
-            
-            if fingerprint.lowercased() == expectedFingerprint {
-                completionHandler(.useCredential, URLCredential(trust: serverTrust))
-                return
-            }
+        let actualHost = challenge.protectionSpace.host
+        guard actualHost == expectedHost else {
+            lastFailure = .hostMismatch(expected: expectedHost, actual: actualHost)
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+
+        guard let certificates = SecTrustCopyCertificateChain(serverTrust) as? [SecCertificate],
+              let cert = certificates.first else {
+            lastFailure = .certificateUnavailable(host: expectedHost)
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+
+        let data = SecCertificateCopyData(cert) as Data
+        let digest = SHA256.hash(data: data)
+        let observedFingerprint = digest.map { String(format: "%02x", $0) }.joined()
+
+        guard observedFingerprint.lowercased() == expectedFingerprint else {
+            let expectedSuffix = String(expectedFingerprint.suffix(8)).uppercased()
+            let actualSuffix = String(observedFingerprint.suffix(8)).uppercased()
+            lastFailure = mismatchReason == .reconnect
+                ? .identityChanged(host: expectedHost, expectedSuffix: expectedSuffix, actualSuffix: actualSuffix)
+                : .fingerprintMismatch(host: expectedHost, expectedSuffix: expectedSuffix, actualSuffix: actualSuffix)
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+
+        let policy = SecPolicyCreateSSL(true, expectedHost as CFString)
+        SecTrustSetPolicies(serverTrust, policy)
+        SecTrustSetAnchorCertificates(serverTrust, [cert] as CFArray)
+        SecTrustSetAnchorCertificatesOnly(serverTrust, true)
+
+        guard SecTrustEvaluateWithError(serverTrust, nil) else {
+            lastFailure = .certificateValidationFailed(host: expectedHost)
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
         }
         
-        completionHandler(.cancelAuthenticationChallenge, nil)
+        completionHandler(.useCredential, URLCredential(trust: serverTrust))
     }
 }
 
 class MGManualPairingTrustDelegate: NSObject, URLSessionDelegate {
+    let expectedHost: String
     var retrievedFingerprint: String?
+    var lastFailure: MGBridgeTrustError?
+
+    init(expectedHost: String) {
+        self.expectedHost = expectedHost
+    }
     
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
@@ -571,16 +745,35 @@ class MGManualPairingTrustDelegate: NSObject, URLSessionDelegate {
             return
         }
         
-        if let certificates = SecTrustCopyCertificateChain(serverTrust) as? [SecCertificate],
-           let cert = certificates.first {
-            let data = SecCertificateCopyData(cert) as Data
-            let digest = SHA256.hash(data: data)
-            retrievedFingerprint = digest.map { String(format: "%02x", $0) }.joined()
-            completionHandler(.useCredential, URLCredential(trust: serverTrust))
+        let actualHost = challenge.protectionSpace.host
+        guard actualHost == expectedHost else {
+            lastFailure = .hostMismatch(expected: expectedHost, actual: actualHost)
+            completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
-        
-        completionHandler(.cancelAuthenticationChallenge, nil)
+
+        guard let certificates = SecTrustCopyCertificateChain(serverTrust) as? [SecCertificate],
+              let cert = certificates.first else {
+            lastFailure = .certificateUnavailable(host: expectedHost)
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+
+        let policy = SecPolicyCreateSSL(true, expectedHost as CFString)
+        SecTrustSetPolicies(serverTrust, policy)
+        SecTrustSetAnchorCertificates(serverTrust, [cert] as CFArray)
+        SecTrustSetAnchorCertificatesOnly(serverTrust, true)
+
+        guard SecTrustEvaluateWithError(serverTrust, nil) else {
+            lastFailure = .certificateValidationFailed(host: expectedHost)
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+
+        let data = SecCertificateCopyData(cert) as Data
+        let digest = SHA256.hash(data: data)
+        retrievedFingerprint = digest.map { String(format: "%02x", $0) }.joined()
+        completionHandler(.useCredential, URLCredential(trust: serverTrust))
     }
 }
 
@@ -692,7 +885,11 @@ final class MGAppModel {
     var pairingPayload: MGPairingQRCodePayload = MGPairingQRCodePayload(
         sessionId: "",
         address: "",
-        token: "",
+        token: nil,
+        protocolVersion: nil,
+        httpsHost: nil,
+        httpsPort: nil,
+        wssPort: nil,
         bridgeFingerprint: "",
         expiresAt: Date(),
         bridgeVersion: ""
@@ -1085,7 +1282,13 @@ final class MGAppModel {
         request.setValue("Bearer \(s.deviceSecret)", forHTTPHeaderField: "Authorization")
         request.setValue(s.deviceId, forHTTPHeaderField: "x-mg-device-id")
         
-        let delegate = MGTrustPinningDelegate(expectedFingerprint: s.bridgeFingerprint)
+        guard let host = URL(string: wsAddress.replacingOccurrences(of: "wss://", with: "https://"))?.host else { return }
+
+        let delegate = MGTrustPinningDelegate(
+            expectedHost: host,
+            expectedFingerprint: s.bridgeFingerprint,
+            mismatchReason: .reconnect
+        )
         let urlSession = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
         let wsTask = urlSession.webSocketTask(with: request)
         self.webSocketTask = wsTask
@@ -1277,8 +1480,12 @@ enum MGFixtures {
 
     static let pairingPayload = MGPairingQRCodePayload(
         sessionId: "mock-session-12345678",
-        address: "ws://192.168.1.18:59443",
-        token: "MG-7K4Q-98N1",
+        address: "wss://192.168.1.18:59443",
+        token: nil,
+        protocolVersion: "1",
+        httpsHost: "192.168.1.18",
+        httpsPort: 59443,
+        wssPort: 59443,
         bridgeFingerprint: "3B:A7:E1:44:3F:92",
         expiresAt: .now.addingTimeInterval(300),
         bridgeVersion: "0.1.0"

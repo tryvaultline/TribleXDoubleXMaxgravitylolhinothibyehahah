@@ -226,7 +226,11 @@ struct MGBridgeCapability: Identifiable, Codable, Hashable {
 struct MGPairingQRCodePayload: Hashable, Codable {
     let sessionId: String
     let address: String
-    let token: String
+    let token: String?
+    let protocolVersion: String?
+    let httpsHost: String?
+    let httpsPort: Int?
+    let wssPort: Int?
     let bridgeFingerprint: String
     let expiresAt: Date
     let bridgeVersion: String

@@ -47,4 +47,24 @@ describe("bridge server", () => {
     expect(allowed.json()).toHaveLength(1);
     await app.close();
   });
+
+  it("does not create a QR pairing session until the TLS readiness hook succeeds", async () => {
+    let readinessChecks = 0;
+    const app = await buildServer({
+      beforeCreatePairingSession: async () => {
+        readinessChecks += 1;
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/connection/pairing-sessions",
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(readinessChecks).toBe(1);
+    expect(response.json().address).toMatch(/^ws:\/\/|^wss:\/\//);
+    await app.close();
+  });
 });

@@ -2,7 +2,6 @@ import { exec, spawn } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getLocalIp } from "./security/network.js";
 import os from "node:os";
 import { AntigravityCliAccountAdapter } from "./antigravity-adapter.js";
 import { FileTrustStore } from "./trust-store.js";
@@ -63,16 +62,18 @@ async function startBridge(): Promise<void> {
 }
 
 async function getPairingSession() {
-  const localIp = getLocalIp();
   const url = `http://127.0.0.1:${port}/v1/connection/pairing-sessions`;
-  const response = await fetch(url, { method: "POST" });
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: "{}"
+  });
   if (!response.ok) {
     throw new Error(`Failed to create pairing session: ${response.statusText}`);
   }
-  const payload = await response.json() as any;
-  // Override address to LAN HTTPS
-  payload.address = `wss://${localIp}:${port}`;
-  return payload;
+  return await response.json() as any;
 }
 
 async function pair() {
@@ -80,7 +81,7 @@ async function pair() {
   
   try {
     const session = await getPairingSession();
-    const localIp = getLocalIp();
+    const localIp = new URL(session.address.replace(/^wss:/, "https:")).hostname;
     const computerName = os.hostname();
     
     console.log("\n=== Pairing Session Details ===");

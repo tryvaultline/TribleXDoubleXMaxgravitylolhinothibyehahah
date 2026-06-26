@@ -4,21 +4,25 @@ import { buildServer } from "./server.js";
 import { FileTrustStore } from "./trust-store.js";
 import { getOrCreateCert } from "./security/certs.js";
 import { PairingManager } from "./pairing.js";
-import { getLocalIp } from "./security/network.js";
+import { getLocalIp, listPrivateLanInterfaces } from "./security/network.js";
 import { writeFileSync, mkdirSync } from "node:fs";
+import https from "node:https";
+import crypto from "node:crypto";
+import tls from "node:tls";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const localDir = join(here, "..", ".local");
+const localDir = join(here, "..", "..", ".local");
 mkdirSync(localDir, { recursive: true });
 writeFileSync(join(localDir, "bridge.pid"), String(process.pid));
 
 const trustStorePath = process.env.MAXGRAVITY_TRUST_STORE ?? join(localDir, "trusted-devices.json");
 const port = Number(process.env.MAXGRAVITY_BRIDGE_PORT ?? "59443");
 const localIp = getLocalIp();
+const privateLanInterfaces = listPrivateLanInterfaces();
 const projectRoot = join(here, "..", "..");
 
 const trustStore = new FileTrustStore(trustStorePath);
-const { cert, key, fingerprint } = getOrCreateCert(localDir);
+const { cert, key, fingerprint } = getOrCreateCert(localDir, privateLanInterfaces.map((entry) => entry.address));
 
 const pairingManager = new PairingManager(trustStore, {
   address: `wss://${localIp}:${port}`,
@@ -40,7 +44,8 @@ const localServer = await buildServer({
   pairingManager,
   address: `ws://127.0.0.1:${port}`,
   bridgeVersion: "0.1.0",
-  workspaceRoots
+  workspaceRoots,
+  beforeCreatePairingSession: ensureLanReady
 });
 
 await localServer.listen({ port, host: "127.0.0.1" });
@@ -68,6 +73,15 @@ async function startLanServer() {
   }
 }
 
+async function ensureLanReady() {
+  if (localIp === "127.0.0.1") {
+    throw new Error("A private LAN IPv4 address is required before QR pairing can be generated.");
+  }
+
+  await startLanServer();
+  await verifyTlsHealth(localIp, port, fingerprint);
+}
+
 async function stopLanServer() {
   if (!lanServer) return;
   console.log("Stopping LAN HTTPS Server...");
@@ -84,7 +98,7 @@ async function stopLanServer() {
 const devices = await trustStore.list();
 const hasActiveDevices = devices.some((d) => !d.revokedAt);
 if (hasActiveDevices) {
-  await startLanServer();
+  await ensureLanReady();
 }
 
 // Check for pairing session activation to start LAN server
@@ -117,3 +131,50 @@ process.on("SIGINT", async () => {
   await localServer.close();
   process.exit(0);
 });
+
+async function verifyTlsHealth(host: string, portNumber: number, expectedFingerprint: string) {
+  await new Promise<void>((resolve, reject) => {
+    let observedFingerprint = "";
+    const request = https.request(
+      {
+        host,
+        port: portNumber,
+        path: "/v1/connection/health",
+        method: "GET",
+        rejectUnauthorized: false
+      },
+      (response) => {
+        response.resume();
+
+        if (response.statusCode !== 200) {
+          reject(new Error(`TLS health check returned status ${response.statusCode ?? "unknown"}.`));
+          return;
+        }
+
+        if (!observedFingerprint) {
+          reject(new Error("TLS health check did not expose a peer certificate."));
+          return;
+        }
+
+        if (observedFingerprint !== expectedFingerprint) {
+          reject(new Error(`TLS health check fingerprint mismatch (${observedFingerprint} != ${expectedFingerprint}).`));
+          return;
+        }
+
+        resolve();
+      }
+    );
+
+    request.on("socket", (socket) => {
+      (socket as tls.TLSSocket).once("secureConnect", () => {
+        const peer = (socket as tls.TLSSocket).getPeerCertificate(true) as { raw?: Buffer };
+        if (peer?.raw) {
+          observedFingerprint = crypto.createHash("sha256").update(peer.raw).digest("hex").toUpperCase();
+        }
+      });
+    });
+
+    request.on("error", reject);
+    request.end();
+  });
+}

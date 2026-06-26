@@ -204,16 +204,29 @@ struct MGPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.body.weight(.semibold))
-            .foregroundStyle(.black)
+            .foregroundStyle(Color.black.opacity(0.86))
             .frame(maxWidth: .infinity)
             .frame(minHeight: 56)
             .background(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(Color.white)
+                    .fill(Color(red: 0.94, green: 0.93, blue: 0.90))
+                    .overlay(alignment: .top) {
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.62), Color.clear],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .frame(height: 22)
+                            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    }
             )
-            .scaleEffect(configuration.isPressed ? 0.975 : 1)
-            .opacity(configuration.isPressed ? 0.94 : 1)
-            .animation(.spring(response: 0.24, dampingFraction: 0.76), value: configuration.isPressed)
+            .shadow(color: Color.black.opacity(configuration.isPressed ? 0.10 : 0.18), radius: configuration.isPressed ? 6 : 12, y: configuration.isPressed ? 4 : 8)
+            .scaleEffect(configuration.isPressed ? 0.972 : 1)
+            .opacity(configuration.isPressed ? 0.96 : 1)
+            .animation(.spring(response: 0.26, dampingFraction: 0.78), value: configuration.isPressed)
     }
 }
 

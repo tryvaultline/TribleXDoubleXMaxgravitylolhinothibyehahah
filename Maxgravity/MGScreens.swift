@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import UIKit
 
 struct MGRootView: View {
     @Environment(MGAppModel.self) private var appModel
@@ -1428,220 +1429,217 @@ struct MGScheduleTaskSheet: View {
 struct MGPairingCodeSheet: View {
     @Environment(MGAppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
-    
+
     enum ScreenState {
         case scanner
         case manualEntry
         case confirmation(payload: MGPairingQRCodePayload)
         case loading(message: String)
+        case waitingForApproval
         case success
-        case error(message: String)
+        case error(PairingIssue)
     }
-    
+
+    enum RetryAction {
+        case scanner
+        case manualLookup
+        case performPairing(MGPairingQRCodePayload)
+    }
+
+    struct PairingIssue: Identifiable {
+        let id = UUID()
+        let title: String
+        let body: String
+        let diagnosticCode: String?
+        let host: String?
+        let certificateSuffix: String?
+    }
+
     @State private var state: ScreenState = .scanner
     @State private var ipAddress = ""
     @State private var pairingToken = ""
-    
+    @State private var retryAction: RetryAction = .scanner
+    @State private var isRetrying = false
+    @State private var connectionDetailsExpanded = false
+
     var body: some View {
         NavigationStack {
             ZStack {
                 MGAppBackground()
-                
-                switch state {
-                case .scanner:
-                    scannerView
-                case .manualEntry:
-                    manualEntryView
-                case .confirmation(let payload):
-                    confirmationView(payload)
-                case .loading(let msg):
-                    loadingView(msg)
-                case .success:
-                    successView
-                case .error(let msg):
-                    errorView(msg)
+
+                ScrollView(showsIndicators: false) {
+                    MGDarkGlassSheet {
+                        VStack(alignment: .leading, spacing: 18) {
+                            switch state {
+                            case .scanner:
+                                scannerView
+                            case .manualEntry:
+                                manualEntryView
+                            case .confirmation(let payload):
+                                confirmationView(payload)
+                            case .loading(let message):
+                                loadingView(message)
+                            case .waitingForApproval:
+                                waitingForApprovalView
+                            case .success:
+                                successView
+                            case .error(let issue):
+                                errorView(issue)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                    .padding(.bottom, 28)
                 }
             }
             .navigationTitle("Pairing Setup")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(MGTheme.secondaryText)
+                    Button("Cancel") { dismiss() }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(MGTheme.secondaryText)
                 }
-                
-                if case .scanner = state {
-                    ToolbarItem(placement: .topBarTrailing) {
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    if case .manualEntry = state {
+                        Button("Scan QR") {
+                            retryAction = .scanner
+                            state = .scanner
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(MGTheme.primaryText)
+                    } else if case .scanner = state {
                         Button("Enter Code") {
                             state = .manualEntry
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(MGTheme.primaryText)
                     }
-                } else if case .manualEntry = state {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Scan QR") {
-                            state = .scanner
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(MGTheme.primaryText)
-                    }
                 }
             }
         }
     }
-    
+
     private var scannerView: some View {
-        VStack(spacing: 20) {
-            Text("Scan QR Code")
-                .font(.headline)
-                .foregroundStyle(MGTheme.primaryText)
-                .padding(.top, 16)
-            
-            Text("Open the pairing setup page on your computer and scan the QR code displayed.")
-                .font(.caption)
-                .foregroundStyle(MGTheme.secondaryText)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 20)
-            
-             ZStack {
-                 MGCameraScannerView { scannedCode in
-                     MGHaptics.selection()
-                     
+        VStack(alignment: .leading, spacing: 18) {
+            sheetHeader("Scan the desktop QR", detail: "Use the current pairing screen from your Windows bridge. Pairing stays on your local network and pins the bridge identity.")
+
+            MGDarkGlassCard(cornerRadius: 30) {
+                MGCameraScannerView { scannedCode in
+                    MGHaptics.selection()
+
                     if let payload = decodePairingPayload(from: scannedCode) {
-                         self.state = .confirmation(payload: payload)
-                     } else {
-                         self.state = .error(message: "Invalid QR code payload format.")
-                     }
+                        retryAction = .performPairing(payload)
+                        state = .confirmation(payload: payload)
+                    } else {
+                        state = .error(issue(code: "INVALID_QR", host: nil, suffix: nil))
+                        retryAction = .scanner
+                    }
                 } onError: { errMsg in
-                    self.state = .error(message: "Camera Error: \(errMsg)")
+                    state = .error(
+                        PairingIssue(
+                            title: "Secure connection failed",
+                            body: "Maxgravity could not verify this bridge’s identity. Check that the QR code is current and try pairing again.",
+                            diagnosticCode: "CAMERA_\(errMsg.replacingOccurrences(of: " ", with: "_").uppercased())",
+                            host: nil,
+                            certificateSuffix: nil
+                        )
+                    )
+                    retryAction = .scanner
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 24))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24)
-                        .stroke(MGTheme.border, lineWidth: 1)
-                )
                 .frame(height: 320)
-                .padding(16)
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             }
-            
-            Spacer()
         }
     }
-    
+
     private var manualEntryView: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("Enter Pairing Code Manually")
-                .font(.headline)
-                .foregroundStyle(MGTheme.primaryText)
-                .padding(.top, 16)
-            
-            Text("Enter the computer IP/address and the pairing code shown on your desktop screen.")
-                .font(.caption)
-                .foregroundStyle(MGTheme.secondaryText)
-            
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Computer IP Address")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(MGTheme.secondaryText)
-                
-                TextField("e.g. 192.168.1.18", text: $ipAddress)
-                    .keyboardType(.numbersAndPunctuation)
-                    .textInputAutocapitalization(.never)
-                    .padding(14)
-                    .mgReadableSurface(cornerRadius: 18)
-            }
-            
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Pairing Code")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(MGTheme.secondaryText)
-                
-                TextField("e.g. MG-7K4Q-98N1", text: $pairingToken)
-                    .textInputAutocapitalization(.characters)
-                    .padding(14)
-                    .mgReadableSurface(cornerRadius: 18)
-            }
-            
-            Spacer()
-            
-            MGPrimaryActionButton(title: "Connect", icon: "arrow.right.circle.fill") {
-                Task {
-                    await fetchManualSession()
+        VStack(alignment: .leading, spacing: 18) {
+            sheetHeader("Enter pairing details", detail: "Manual pairing still verifies the same pinned bridge identity. The code does not bypass TLS or fingerprint checks.")
+
+            MGDarkGlassCard(cornerRadius: 30) {
+                VStack(alignment: .leading, spacing: 14) {
+                    entryField(title: "Bridge IP", placeholder: "192.168.1.18", text: $ipAddress, autocapitalization: .never, keyboardType: .numbersAndPunctuation)
+                    entryField(title: "Pairing code", placeholder: "Shown on your desktop", text: $pairingToken, autocapitalization: .characters, keyboardType: .asciiCapable)
                 }
             }
+
+            MGPrimaryActionButton(title: "Verify bridge", icon: "lock.shield.fill", isLoading: isRetrying, isDisabled: isRetrying) {
+                Task { await fetchManualSession() }
+            }
         }
-        .padding(20)
     }
-    
+
     private func fetchManualSession() async {
-        state = .loading(message: "Fetching pairing details from bridge...")
-        
+        isRetrying = true
+        defer { isRetrying = false }
+
+        state = .loading(message: "Checking the bridge certificate…")
+        retryAction = .manualLookup
+        connectionDetailsExpanded = false
+
         let cleanedIp = ipAddress.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedToken = pairingToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        
+
         guard !cleanedIp.isEmpty, !normalizedToken.isEmpty else {
-            state = .error(message: "IP address and pairing code cannot be empty.")
+            state = .error(
+                PairingIssue(
+                    title: "Secure connection failed",
+                    body: "Maxgravity could not verify this bridge’s identity. Check that the QR code is current and try pairing again.",
+                    diagnosticCode: "MANUAL_INPUT_REQUIRED",
+                    host: cleanedIp.isEmpty ? nil : cleanedIp,
+                    certificateSuffix: nil
+                )
+            )
             return
         }
-        
+
         let targetUrlStr = "https://\(cleanedIp):59443/v1/connection/active-session"
         guard let url = URL(string: targetUrlStr) else {
-            state = .error(message: "Invalid bridge IP address.")
+            state = .error(issue(code: "INVALID_HOST", host: cleanedIp, suffix: nil))
             return
         }
-        
+
         do {
-            let request = URLRequest(url: url)
-            let delegate = MGManualPairingTrustDelegate()
+            let delegate = MGManualPairingTrustDelegate(expectedHost: cleanedIp)
             let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
-            let (data, response) = try await session.data(for: request)
-            
+            let (data, response) = try await session.data(for: URLRequest(url: url))
+
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                state = .error(message: "Bridge not found at this IP address. Ensure the bridge is running.")
+                state = .error(issue(code: "BRIDGE_NOT_FOUND", host: cleanedIp, suffix: nil))
                 return
             }
-            
-            struct TempMetadata: Codable {
-                let sessionId: String
-                let address: String
-                let bridgeFingerprint: String
-                let expiresAt: String
-                let bridgeVersion: String
-            }
-            
-            let meta = try JSONDecoder().decode(TempMetadata.self, from: data)
-            
-            // Verify fingerprint of retrieved certificate
-            let expected = meta.bridgeFingerprint.replacingOccurrences(of: ":", with: "").lowercased()
-            if delegate.retrievedFingerprint?.lowercased() != expected {
-                state = .error(message: "Bridge certificate fingerprint mismatch.")
+
+            let meta = try JSONDecoder.mgDecoder.decode(MGPairingQRCodePayload.self, from: data)
+            let retrievedFingerprint = delegate.retrievedFingerprint?.lowercased()
+            let expectedFingerprint = meta.bridgeFingerprint.replacingOccurrences(of: ":", with: "").lowercased()
+
+            guard retrievedFingerprint == expectedFingerprint else {
+                state = .error(issue(code: "PIN_MISMATCH", host: cleanedIp, suffix: String(expectedFingerprint.suffix(8)).uppercased()))
                 return
             }
-            
-            let df = ISO8601DateFormatter()
-            df.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let expiryDate = df.date(from: meta.expiresAt) ?? {
-                let df2 = ISO8601DateFormatter()
-                df2.formatOptions = [.withInternetDateTime]
-                return df2.date(from: meta.expiresAt)
-            }() ?? Date().addingTimeInterval(300)
-            
+
             let payload = MGPairingQRCodePayload(
                 sessionId: meta.sessionId,
                 address: meta.address,
                 token: normalizedToken,
+                protocolVersion: meta.protocolVersion,
+                httpsHost: meta.httpsHost ?? cleanedIp,
+                httpsPort: meta.httpsPort,
+                wssPort: meta.wssPort,
                 bridgeFingerprint: meta.bridgeFingerprint,
-                expiresAt: expiryDate,
+                expiresAt: meta.expiresAt,
                 bridgeVersion: meta.bridgeVersion
             )
-            
+
+            retryAction = .performPairing(payload)
             state = .confirmation(payload: payload)
+        } catch let trustError as MGBridgeTrustError {
+            state = .error(issue(from: trustError))
         } catch {
-            state = .error(message: "Connection failed: \(error.localizedDescription)")
+            state = .error(issue(code: "MANUAL_LOOKUP_FAILED", host: cleanedIp, suffix: nil))
         }
     }
 
@@ -1655,16 +1653,14 @@ struct MGPairingCodeSheet: View {
 
         if let url = URL(string: trimmed),
            let components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
-            if let payloadItem = components.queryItems?.first(where: { $0.name == "payload" })?.value {
-                if let decoded = decodePayloadString(payloadItem) {
-                    return decoded
-                }
+            if let payloadItem = components.queryItems?.first(where: { $0.name == "payload" })?.value,
+               let decoded = decodePayloadString(payloadItem) {
+                return decoded
             }
 
-            if let jsonItem = components.queryItems?.first(where: { $0.name == "json" })?.value {
-                if let decoded = decodePayloadString(jsonItem) {
-                    return decoded
-                }
+            if let jsonItem = components.queryItems?.first(where: { $0.name == "json" })?.value,
+               let decoded = decodePayloadString(jsonItem) {
+                return decoded
             }
         }
 
@@ -1688,70 +1684,110 @@ struct MGPairingCodeSheet: View {
 
         return nil
     }
-    
+
     private func confirmationView(_ payload: MGPairingQRCodePayload) -> some View {
-        VStack(alignment: .leading, spacing: 24) {
-            MGBrandMark(size: 48)
-                .padding(.top, 16)
-            
-            Text("Confirm Connection")
-                .font(.title2.weight(.bold))
-                .foregroundStyle(MGTheme.primaryText)
-            
-            Text("Verify the desktop fingerprint matches what is shown on your screen before proceeding.")
-                .font(.body)
-                .foregroundStyle(MGTheme.secondaryText)
-            
-            VStack(alignment: .leading, spacing: 14) {
-                labeledField("Address", value: payload.address)
-                Divider().overlay(MGTheme.border)
-                labeledField("Desktop Fingerprint", value: payload.bridgeFingerprint)
-                Divider().overlay(MGTheme.border)
-                labeledField("Protocol Version", value: payload.bridgeVersion)
-            }
-            .padding(18)
-            .mgReadableSurface(cornerRadius: 24)
-            
-            Spacer()
-            
-            VStack(spacing: 12) {
-                MGPrimaryActionButton(title: "Connect & Trust Computer", icon: "lock.shield.fill") {
-                    Task {
-                        await performPairing(payload)
-                    }
+        VStack(alignment: .leading, spacing: 18) {
+            sheetHeader("Confirm this bridge", detail: "The app will trust only this host and this certificate pin. Any certificate change requires a fresh pairing approval.")
+
+            MGDarkGlassCard(cornerRadius: 30) {
+                VStack(alignment: .leading, spacing: 14) {
+                    labeledField("Bridge host", value: payload.httpsHost ?? URL(string: payload.address)?.host ?? payload.address)
+                    Divider().overlay(MGTheme.border)
+                    labeledField("Certificate suffix", value: "…" + payload.bridgeFingerprint.replacingOccurrences(of: ":", with: "").suffix(8).uppercased())
+                    Divider().overlay(MGTheme.border)
+                    labeledField("Protocol", value: payload.protocolVersion ?? payload.bridgeVersion)
                 }
-                
-                Button("Cancel") {
-                    state = .scanner
+            }
+
+            HStack(spacing: 12) {
+                MGPrimaryActionButton(title: "Trust this bridge", icon: "lock.fill", isLoading: isRetrying, isDisabled: isRetrying) {
+                    Task { await performPairing(payload) }
+                }
+
+                Button("Back") {
+                    state = payload.token == nil ? .scanner : .manualEntry
                 }
                 .font(.body.weight(.semibold))
                 .foregroundStyle(MGTheme.primaryText)
-                .frame(maxWidth: .infinity, minHeight: 52)
+                .frame(minWidth: 72, minHeight: 56)
                 .buttonStyle(MGPressableButtonStyle())
                 .mgInteractiveGlass(cornerRadius: 22)
             }
         }
-        .padding(20)
     }
-    
+
     private func performPairing(_ payload: MGPairingQRCodePayload) async {
-        state = .loading(message: "Confirming trust and pairing device...")
+        isRetrying = true
+        defer { isRetrying = false }
+
+        state = .waitingForApproval
+        retryAction = .performPairing(payload)
+        connectionDetailsExpanded = false
+
         do {
             try await appModel.pair(payload: payload, name: UIDevice.current.name)
+            appModel.selectedSection = .spaces
             state = .success
             MGHaptics.success()
-            
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.15) {
                 dismiss()
             }
-        } catch {
-            state = .error(message: "Pairing failed: \(error.localizedDescription)")
+        } catch let trustError as MGBridgeTrustError {
             MGHaptics.warning()
+            state = .error(issue(from: trustError))
+        } catch {
+            MGHaptics.warning()
+            state = .error(issue(code: "PAIRING_FAILED", host: payload.httpsHost ?? URL(string: payload.address)?.host, suffix: String(payload.bridgeFingerprint.replacingOccurrences(of: ":", with: "").suffix(8)).uppercased()))
         }
     }
-    
+
+    private func retryCurrentAction() {
+        guard !isRetrying else { return }
+
+        switch retryAction {
+        case .scanner:
+            state = .scanner
+        case .manualLookup:
+            Task { await fetchManualSession() }
+        case .performPairing(let payload):
+            Task { await performPairing(payload) }
+        }
+    }
+
+    private func sheetHeader(_ title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 30, weight: .bold))
+                .foregroundStyle(MGTheme.primaryText)
+            Text(detail)
+                .font(.subheadline)
+                .foregroundStyle(MGTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func entryField(title: String, placeholder: String, text: Binding<String>, autocapitalization: TextInputAutocapitalization, keyboardType: UIKeyboardType) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(MGTheme.secondaryText)
+            TextField(placeholder, text: text)
+                .textInputAutocapitalization(autocapitalization)
+                .keyboardType(keyboardType)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 13)
+                .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                )
+                .foregroundStyle(MGTheme.primaryText)
+        }
+    }
+
     private func labeledField(_ label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 5) {
             Text(label)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(MGTheme.secondaryText)
@@ -1760,63 +1796,125 @@ struct MGPairingCodeSheet: View {
                 .foregroundStyle(MGTheme.primaryText)
         }
     }
-    
+
     private func loadingView(_ message: String) -> some View {
-        VStack(spacing: 18) {
-            ProgressView()
-                .scaleEffect(1.3)
-                .tint(.white)
-            Text(message)
-                .font(.body)
-                .foregroundStyle(MGTheme.primaryText)
-                .multilineTextAlignment(.center)
-        }
-        .padding(40)
-        .mgInteractiveGlass(cornerRadius: 28)
-    }
-    
-    private var successView: some View {
-        VStack(spacing: 18) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(MGTheme.success)
-            Text("Computer Paired Successfully")
-                .font(.headline)
-                .foregroundStyle(MGTheme.primaryText)
-            Text("Maxgravity is now linked to your computer.")
-                .font(.caption)
-                .foregroundStyle(MGTheme.secondaryText)
-        }
-        .padding(40)
-        .mgInteractiveGlass(cornerRadius: 28)
-    }
-    
-    private func errorView(_ message: String) -> some View {
-        VStack(spacing: 18) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 54))
-                .foregroundStyle(MGTheme.warning)
-            Text("Pairing Failed")
-                .font(.headline)
-                .foregroundStyle(MGTheme.primaryText)
-            Text(message)
-                .font(.caption)
-                .foregroundStyle(MGTheme.secondaryText)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 10)
-            
-            Button("Try Again") {
-                state = .scanner
+        MGDarkGlassCard(cornerRadius: 28) {
+            VStack(spacing: 14) {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .tint(.white)
+                    .scaleEffect(1.1)
+                Text(message)
+                    .font(.body)
+                    .foregroundStyle(MGTheme.primaryText)
             }
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(MGTheme.primaryText)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 12)
-            .mgInteractiveGlass(cornerRadius: 16)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
         }
-        .padding(32)
-        .mgReadableSurface(cornerRadius: 28)
-        .padding(20)
+    }
+
+    private var waitingForApprovalView: some View {
+        MGDarkGlassCard(cornerRadius: 28) {
+            VStack(alignment: .leading, spacing: 14) {
+                MGStatusPill(title: "Waiting for desktop approval", tone: .warning)
+                Text("Approve this iPhone from your Windows pairing page to finish linking it.")
+                    .font(.body)
+                    .foregroundStyle(MGTheme.primaryText)
+                Text("The secure connection is established. Maxgravity is waiting for a local approval response from the bridge.")
+                    .font(.caption)
+                    .foregroundStyle(MGTheme.secondaryText)
+            }
+        }
+    }
+
+    private var successView: some View {
+        MGDarkGlassCard(cornerRadius: 28) {
+            VStack(spacing: 14) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 58, weight: .semibold))
+                    .foregroundStyle(MGTheme.success)
+                Text("Pairing complete")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(MGTheme.primaryText)
+                Text("The bridge is approved and Spaces is ready.")
+                    .font(.subheadline)
+                    .foregroundStyle(MGTheme.secondaryText)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+        }
+    }
+
+    private func errorView(_ issue: PairingIssue) -> some View {
+        MGDarkGlassCard(cornerRadius: 30) {
+            VStack(alignment: .leading, spacing: 18) {
+                MGGlassIconWell(systemName: "exclamationmark.triangle.fill")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(issue.title)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(MGTheme.primaryText)
+                    Text(issue.body)
+                        .font(.subheadline)
+                        .foregroundStyle(MGTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if issue.diagnosticCode != nil || issue.host != nil || issue.certificateSuffix != nil {
+                    DisclosureGroup("Connection details", isExpanded: $connectionDetailsExpanded) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            if let code = issue.diagnosticCode {
+                                labeledField("Code", value: code)
+                            }
+                            if let host = issue.host {
+                                labeledField("Host", value: host)
+                            }
+                            if let suffix = issue.certificateSuffix {
+                                labeledField("Certificate", value: suffix)
+                            }
+                        }
+                        .padding(.top, 10)
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(MGTheme.secondaryText)
+                }
+
+                MGPrimaryActionButton(title: isRetrying ? "Retrying…" : "Try pairing again", isLoading: isRetrying, isDisabled: isRetrying) {
+                    retryCurrentAction()
+                }
+            }
+        }
+    }
+
+    private func issue(from trustError: MGBridgeTrustError) -> PairingIssue {
+        let title: String
+        let body: String
+
+        switch trustError {
+        case .identityChanged:
+            title = "Bridge identity changed"
+            body = "This bridge presents a different certificate than the one previously approved. Pair it again from a current QR code."
+        default:
+            title = "Secure connection failed"
+            body = "Maxgravity could not verify this bridge’s identity. Check that the QR code is current and try pairing again."
+        }
+
+        return PairingIssue(
+            title: title,
+            body: body,
+            diagnosticCode: trustError.diagnosticCode,
+            host: trustError.host,
+            certificateSuffix: trustError.certificateSuffix
+        )
+    }
+
+    private func issue(code: String, host: String?, suffix: String?) -> PairingIssue {
+        PairingIssue(
+            title: "Secure connection failed",
+            body: "Maxgravity could not verify this bridge’s identity. Check that the QR code is current and try pairing again.",
+            diagnosticCode: code,
+            host: host,
+            certificateSuffix: suffix
+        )
     }
 }
 

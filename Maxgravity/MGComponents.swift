@@ -294,27 +294,157 @@ struct MGChatRow: View {
 struct MGPrimaryActionButton: View {
     let title: String
     let icon: String?
+    var isLoading: Bool = false
+    var isDisabled: Bool = false
     let action: () -> Void
 
-    init(title: String, icon: String? = nil, action: @escaping () -> Void) {
+    init(title: String, icon: String? = nil, isLoading: Bool = false, isDisabled: Bool = false, action: @escaping () -> Void) {
         self.title = title
         self.icon = icon
+        self.isLoading = isLoading
+        self.isDisabled = isDisabled
         self.action = action
     }
 
     var body: some View {
         Button(action: {
+            guard !isLoading else { return }
             MGHaptics.impact(.light)
             action()
         }) {
             HStack(spacing: 10) {
-                if let icon {
+                if isLoading {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(.black.opacity(0.82))
+                        .scaleEffect(0.92)
+                } else if let icon {
                     Image(systemName: icon)
                 }
                 Text(title)
             }
         }
         .buttonStyle(MGPrimaryButtonStyle())
+        .disabled(isDisabled || isLoading)
+    }
+}
+
+struct MGDarkGlassSheet<Content: View>: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Capsule()
+                .fill(Color.white.opacity(0.24))
+                .frame(width: 44, height: 5)
+                .padding(.top, 12)
+                .padding(.bottom, 18)
+
+            content
+        }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 18)
+        .background(sheetBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 34, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 34, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.38), radius: 26, y: 14)
+    }
+
+    @ViewBuilder
+    private var sheetBackground: some View {
+        if reduceTransparency {
+            RoundedRectangle(cornerRadius: 34, style: .continuous)
+                .fill(Color(red: 0.10, green: 0.10, blue: 0.11))
+        } else {
+            RoundedRectangle(cornerRadius: 34, style: .continuous)
+                .fill(.thinMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 34, style: .continuous)
+                        .fill(Color(red: 0.08, green: 0.08, blue: 0.09).opacity(0.82))
+                }
+                .overlay(alignment: .top) {
+                    RoundedRectangle(cornerRadius: 34, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.14), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .frame(height: 42)
+                        .clipShape(RoundedRectangle(cornerRadius: 34, style: .continuous))
+                }
+        }
+    }
+}
+
+struct MGDarkGlassCard<Content: View>: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    var cornerRadius: CGFloat = 28
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        content
+            .padding(20)
+            .background {
+                if reduceTransparency {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(Color(red: 0.13, green: 0.13, blue: 0.14))
+                } else {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                .fill(Color(red: 0.12, green: 0.12, blue: 0.13).opacity(0.76))
+                        }
+                        .overlay(alignment: .top) {
+                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.white.opacity(0.12), Color.clear],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                                .frame(height: 34)
+                                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                        }
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(Color.white.opacity(0.07), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.24), radius: 18, y: 12)
+    }
+}
+
+struct MGGlassIconWell: View {
+    let systemName: String
+    var tone: Color = MGTheme.warning
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    Circle()
+                        .fill(tone.opacity(0.20))
+                }
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.09), lineWidth: 1)
+                )
+            Image(systemName: systemName)
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(tone)
+        }
+        .frame(width: 54, height: 54)
+        .shadow(color: Color.black.opacity(0.18), radius: 10, y: 6)
     }
 }
 

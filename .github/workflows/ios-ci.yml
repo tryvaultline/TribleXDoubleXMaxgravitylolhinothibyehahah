@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -28,11 +27,11 @@ jobs:
       - name: Install bridge dependencies
         run: npm ci
 
-      - name: Bridge typecheck
-        run: npm run typecheck
-
       - name: Bridge lint
         run: npm run lint
+
+      - name: Bridge typecheck
+        run: npm run typecheck
 
       - name: Bridge tests
         run: npm test
@@ -68,31 +67,8 @@ jobs:
       - name: Check iOS static policy
         run: node scripts/check-ios-static.mjs
 
-      - name: Swift source lint (advisory)
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -euo pipefail
-          if command -v swiftformat >/dev/null 2>&1; then
-            swiftformat --lint Maxgravity || {
-              echo "swiftformat reported style-only issues; continuing to xcodebuild for compiler verification."
-              exit 1
-            }
-          else
-            echo "swiftformat not installed on runner; relying on xcodebuild compiler diagnostics."
-          fi
-
-      - name: Build Maxgravity for simulator
-        run: >
-          xcodebuild
-          -project Maxgravity.xcodeproj
-          -scheme Maxgravity
-          -configuration Release
-          -destination 'generic/platform=iOS Simulator'
-          -sdk iphonesimulator
-          -derivedDataPath build/DerivedData
-          CODE_SIGNING_ALLOWED=NO
-          build
+      - name: Private Apple API guard
+        run: node scripts/check-private-apple-apis.mjs
 
       - name: Build Maxgravity for device
         run: >
@@ -116,35 +92,34 @@ jobs:
             echo "Expected app bundle not found at $APP_PATH"
             exit 1
           fi
+          mkdir -p outputs/release build/Payload
           rm -rf build/Payload
           mkdir -p build/Payload
-          cp -R "$APP_PATH" build/Payload/Maxgravity.app
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Info.plist")
+          BUILD_NUMBER=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Info.plist")
+          IPA_PATH="outputs/release/Maxgravity-${VERSION}-${BUILD_NUMBER}-unsigned.ipa"
           (
             cd build
-            /usr/bin/zip -qry Maxgravity-unsigned.ipa Payload
+            cp -R "DerivedData/Build/Products/Release-iphoneos/Maxgravity.app" Payload/Maxgravity.app
+            /usr/bin/zip -qry "../${IPA_PATH}" Payload
           )
+          echo "IPA_PATH=${IPA_PATH}" >> "$GITHUB_ENV"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=${BUILD_NUMBER}" >> "$GITHUB_ENV"
 
-      - name: Package simulator app bundle
-        shell: bash
-        run: |
-          set -euo pipefail
-          APP_PATH="build/DerivedData/Build/Products/Release-iphonesimulator/Maxgravity.app"
-          if [ ! -d "$APP_PATH" ]; then
-            echo "Expected simulator app bundle not found at $APP_PATH"
-            exit 1
-          fi
-          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" build/Maxgravity-simulator-app.zip
+      - name: Validate IPA structure
+        run: >
+          node scripts/validate-ipa.mjs
+          "${{ env.IPA_PATH }}"
+          "com.antigravity.Maxgravity"
+          "Maxgravity"
+          "outputs/release/Maxgravity-${{ env.VERSION }}-${{ env.BUILD_NUMBER }}-unsigned.sha256"
 
-      - name: Upload unsigned IPA
+      - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: maxgravity-unsigned-ipa
-          path: build/Maxgravity-unsigned.ipa
-          if-no-files-found: error
-
-      - name: Upload simulator app bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: maxgravity-simulator-app
-          path: build/Maxgravity-simulator-app.zip
+          name: maxgravity-ipa
+          path: |
+            ${{ env.IPA_PATH }}
+            outputs/release/Maxgravity-${{ env.VERSION }}-${{ env.BUILD_NUMBER }}-unsigned.sha256
           if-no-files-found: error

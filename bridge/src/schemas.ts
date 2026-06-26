@@ -12,7 +12,11 @@ export const BridgeCapabilitySchema = z.object({
 export const PairingSessionSchema = z.object({
   sessionId: z.string().min(16),
   address: z.string().url(),
-  token: z.string().min(24),
+  token: z.string().min(24).optional(),
+  protocolVersion: z.string().min(1).optional(),
+  httpsHost: z.string().min(1).optional(),
+  httpsPort: z.number().int().positive().optional(),
+  wssPort: z.number().int().positive().optional(),
   expiresAt: z.string().datetime(),
   bridgeFingerprint: z.string().min(8),
   bridgeVersion: z.string().min(1)
@@ -20,7 +24,7 @@ export const PairingSessionSchema = z.object({
 
 export const TrustDeviceRequestSchema = z.object({
   sessionId: z.string().min(16),
-  token: z.string().min(24),
+  token: z.string().min(8).max(64).optional(),
   deviceName: z.string().min(1).max(80),
   devicePublicKeyFingerprint: z.string().min(8).max(128),
   platform: z.string().max(40).optional()

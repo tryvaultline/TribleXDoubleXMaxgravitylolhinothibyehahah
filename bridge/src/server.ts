@@ -21,6 +21,7 @@ interface BuildServerOptions {
   clock?: () => Date;
   https?: { key: Buffer; cert: Buffer };
   pairingManager?: PairingManager;
+  beforeCreatePairingSession?: () => Promise<void>;
 }
 
 export async function buildServer(options: BuildServerOptions = {}): Promise<FastifyInstance<any, any, any, any, any>> {
@@ -64,7 +65,12 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
         errorResponseBuilder: () => ({ statusCode: 429, error: "RATE_LIMIT_EXCEEDED", message: "Too many pairing session requests." })
       }
     }
-  }, async () => pairing.createSession());
+  }, async () => {
+    if (options.beforeCreatePairingSession) {
+      await options.beforeCreatePairingSession();
+    }
+    return pairing.createSession();
+  });
 
   app.get("/v1/connection/active-session", async (request, reply) => {
     try {

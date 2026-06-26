@@ -71,6 +71,7 @@ export class PairingManager {
     const token = randomToken(24);
     const now = this.now();
     const expiresAt = new Date(now.getTime() + (this.options.ttlMs ?? 5 * 60_000));
+    const endpoint = new URL(this.options.address.replace(/^wss:/, "https:").replace(/^ws:/, "http:"));
     this.sessions.set(sessionId, {
       sessionId,
       tokenHash: sha256(token),
@@ -81,9 +82,12 @@ export class PairingManager {
     });
 
     return {
+      protocolVersion: "1",
       sessionId,
       address: this.options.address,
-      token,
+      httpsHost: endpoint.hostname,
+      httpsPort: Number(endpoint.port),
+      wssPort: endpoint.protocol === "https:" ? Number(endpoint.port) : undefined,
       expiresAt: expiresAt.toISOString(),
       bridgeFingerprint: this.options.bridgeFingerprint,
       bridgeVersion: this.options.bridgeVersion
@@ -118,7 +122,7 @@ export class PairingManager {
     if (record.expiresAt.getTime() <= now.getTime()) {
       throw new PairingError("Pairing session expired.", "PAIRING_EXPIRED");
     }
-    if (!safeEqualHash(request.token, record.tokenHash)) {
+    if (request.token && !safeEqualHash(request.token, record.tokenHash)) {
       throw new PairingError("Pairing token is invalid.", "PAIRING_TOKEN_INVALID");
     }
 

@@ -7,7 +7,7 @@ struct MGRootView: View {
 
     var body: some View {
         ZStack {
-            MGAppBackground()
+            MGAppBackground(tone: rootBackdropTone)
             if appModel.hasConnectedComputer {
                 NavigationStack(path: Binding(get: { appModel.path }, set: { appModel.path = $0 })) {
                     MGMainShellView()
@@ -94,6 +94,10 @@ struct MGRootView: View {
             [.large]
         }
     }
+
+    private var rootBackdropTone: MGBackdropTone {
+        appModel.hasConnectedComputer ? appModel.selectedSection.backdropTone : .brand
+    }
 }
 
 struct MGMainShellView: View {
@@ -123,7 +127,6 @@ struct MGMainShellView: View {
             .padding(.horizontal, 14)
             .padding(.top, 8)
             .padding(.bottom, 10)
-            .background(MGAppBackground().ignoresSafeArea(edges: .bottom))
         }
         .navigationBarHidden(true)
     }
@@ -172,7 +175,7 @@ struct MGFirstLaunchView: View {
                     }
                 }
                 .padding(16)
-                .mgInteractiveGlass(cornerRadius: 28)
+                .mgReadableSurface(cornerRadius: 28)
             }
 
             Spacer()
@@ -211,53 +214,55 @@ struct MGAnimatedTabBar: View {
     @Namespace private var selectionNamespace
 
     var body: some View {
-        HStack(spacing: 10) {
-            ForEach(MGAppSection.allCases) { section in
-                Button {
-                    withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
-                        onSelect(section)
-                    }
-                    MGHaptics.selection()
-                } label: {
-                    VStack(spacing: 6) {
-                        ZStack(alignment: .topTrailing) {
-                            Image(systemName: section.symbol)
-                                .font(.system(size: 27, weight: .semibold))
-                                .foregroundStyle(selectedSection == section ? Color.white : MGTheme.secondaryText)
+        MGGlassCluster(spacing: 16) {
+            HStack(spacing: 10) {
+                ForEach(MGAppSection.allCases) { section in
+                    Button {
+                        withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+                            onSelect(section)
+                        }
+                        MGHaptics.selection()
+                    } label: {
+                        VStack(spacing: 6) {
+                            ZStack(alignment: .topTrailing) {
+                                Image(systemName: section.symbol)
+                                    .font(.system(size: 27, weight: .semibold))
+                                    .foregroundStyle(selectedSection == section ? Color.white : MGTheme.secondaryText)
 
-                            if badgeCount(for: section) > 0 {
-                                Text("\(badgeCount(for: section))")
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 4)
-                                    .background(Capsule().fill(MGTheme.danger))
-                                    .offset(x: 12, y: -12)
+                                if badgeCount(for: section) > 0 {
+                                    Text("\(badgeCount(for: section))")
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 4)
+                                        .background(Capsule().fill(MGTheme.danger))
+                                        .offset(x: 12, y: -12)
+                                }
+                            }
+                            .frame(height: 34)
+
+                            Text(section.title)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(selectedSection == section ? Color.white : MGTheme.secondaryText)
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 92)
+                        .background {
+                            if selectedSection == section {
+                                RoundedRectangle(cornerRadius: 38, style: .continuous)
+                                    .fill(Color.white.opacity(0.06))
+                                    .matchedGeometryEffect(id: "selected-tab", in: selectionNamespace)
                             }
                         }
-                        .frame(height: 34)
-
-                        Text(section.title)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(selectedSection == section ? Color.white : MGTheme.secondaryText)
-                            .lineLimit(1)
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 92)
-                    .background {
-                        if selectedSection == section {
-                            RoundedRectangle(cornerRadius: 38, style: .continuous)
-                                .fill(Color.white.opacity(0.08))
-                                .matchedGeometryEffect(id: "selected-tab", in: selectionNamespace)
-                        }
-                    }
+                    .buttonStyle(MGPressableButtonStyle())
                 }
-                .buttonStyle(MGPressableButtonStyle())
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .mgInteractiveGlass(cornerRadius: 44)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 10)
-        .mgInteractiveGlass(cornerRadius: 44)
     }
 
     private func badgeCount(for section: MGAppSection) -> Int {
@@ -320,6 +325,7 @@ struct MGSpacesView: View {
         }
         .scrollIndicators(.hidden)
         .navigationBarHidden(true)
+        .mgNavigationChrome()
     }
 }
 
@@ -339,7 +345,7 @@ struct MGNewTaskView: View {
             .padding(20)
             .padding(.bottom, 30)
         }
-        .background(MGAppBackground())
+        .background(MGAppBackground(tone: .brand))
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {
@@ -351,6 +357,7 @@ struct MGNewTaskView: View {
             }
         }
         .navigationBarBackButtonHidden(true)
+        .mgNavigationChrome()
     }
 
     private var topArea: some View {
@@ -415,7 +422,7 @@ struct MGNewTaskView: View {
             .padding(16)
         }
         .buttonStyle(MGPressableButtonStyle())
-        .mgInteractiveGlass(cornerRadius: 24)
+        .mgReadableSurface(cornerRadius: 24)
     }
 
     private var bridgeState: some View {
@@ -437,7 +444,7 @@ struct MGNewTaskView: View {
             }
         }
         .padding(16)
-        .mgInteractiveGlass(cornerRadius: 26)
+        .mgReadableSurface(cornerRadius: 26)
     }
 
     private var spaceTitle: String {
@@ -476,7 +483,7 @@ struct MGChatThreadView: View {
                     .foregroundStyle(MGTheme.secondaryText)
             }
         }
-        .background(MGAppBackground())
+        .background(MGAppBackground(tone: .brand))
         .navigationTitle(appModel.chat(with: chatID)?.title ?? "Chat")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -493,6 +500,7 @@ struct MGChatThreadView: View {
                 }
             }
         }
+        .mgNavigationChrome()
     }
 
     private func stateHeader(_ chat: MGChatSummary) -> some View {
@@ -538,7 +546,7 @@ struct MGChatThreadView: View {
                     }
                 }
                 .padding(16)
-                .mgInteractiveGlass(cornerRadius: 24)
+                .mgReadableSurface(cornerRadius: 24)
                 .frame(maxWidth: 320, alignment: .trailing)
             }
         } else {
@@ -624,7 +632,7 @@ struct MGTaskDetailView: View {
                                     .frame(minHeight: 44)
                                 }
                                 .buttonStyle(MGPressableButtonStyle())
-                                .mgInteractiveGlass(cornerRadius: 18)
+                                .mgReadableSurface(cornerRadius: 18)
                             }
                         }
                     case .changes:
@@ -657,7 +665,7 @@ struct MGTaskDetailView: View {
                                         .textSelection(.enabled)
                                 }
                                 .padding(14)
-                                .mgInteractiveGlass(cornerRadius: 20)
+                                .mgReadableSurface(cornerRadius: 20)
                             }
                         }
                     }
@@ -666,9 +674,10 @@ struct MGTaskDetailView: View {
                 .padding(.vertical, 20)
             }
         }
-        .background(MGAppBackground())
+        .background(MGAppBackground(tone: .activity))
         .navigationTitle("Task detail")
         .navigationBarTitleDisplayMode(.inline)
+        .mgNavigationChrome()
     }
 }
 
@@ -683,12 +692,13 @@ struct MGCodeViewerScreen: View {
                 .foregroundStyle(MGTheme.primaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(18)
-                .mgInteractiveGlass(cornerRadius: 26)
+                .mgReadableSurface(cornerRadius: 26)
                 .padding(20)
         }
-        .background(MGAppBackground())
+        .background(MGAppBackground(tone: .workspace))
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .mgNavigationChrome()
     }
 
     private var sampleCode: String {
@@ -707,12 +717,13 @@ struct MGDiffViewerScreen: View {
                 diffLine("~    .frame(minHeight: 44)", color: MGTheme.warning)
             }
             .padding(18)
-            .mgInteractiveGlass(cornerRadius: 26)
+            .mgReadableSurface(cornerRadius: 26)
             .padding(20)
         }
-        .background(MGAppBackground())
+        .background(MGAppBackground(tone: .activity))
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .mgNavigationChrome()
     }
 
     private func diffLine(_ text: String, color: Color) -> some View {
@@ -725,10 +736,12 @@ struct MGDiffViewerScreen: View {
 
 struct MGPanelShell<Content: View>: View {
     let title: String
+    var tone: MGBackdropTone = .neutral
     let content: Content
 
-    init(title: String, @ViewBuilder content: () -> Content) {
+    init(title: String, tone: MGBackdropTone = .neutral, @ViewBuilder content: () -> Content) {
         self.title = title
+        self.tone = tone
         self.content = content()
     }
 
@@ -741,9 +754,10 @@ struct MGPanelShell<Content: View>: View {
                 .padding(20)
                 .padding(.bottom, 30)
             }
-            .background(MGAppBackground())
+            .background(MGAppBackground(tone: tone))
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
+            .mgNavigationChrome()
         }
     }
 }
@@ -752,7 +766,7 @@ struct MGActivityScreenView: View {
     @Environment(MGAppModel.self) private var appModel
 
     var body: some View {
-        MGPanelShell(title: "Activity") {
+        MGPanelShell(title: "Activity", tone: .activity) {
             ForEach(appModel.activityBuckets) { bucket in
                 MGSettingsGroup(title: bucket.title) {
                     VStack(spacing: 0) {
@@ -810,7 +824,7 @@ struct MGSettingsScreenView: View {
     @Environment(MGAppModel.self) private var appModel
 
     var body: some View {
-        MGPanelShell(title: "Settings") {
+        MGPanelShell(title: "Settings", tone: .settings) {
             MGSettingsGroup(title: "Connected computer") {
                 VStack(spacing: 0) {
                     settingsRow("desktopcomputer", "Computer", appModel.connection?.computerName ?? "Not connected")
@@ -903,7 +917,7 @@ struct MGWorkspaceScreenView: View {
     @Environment(MGAppModel.self) private var appModel
 
     var body: some View {
-        MGPanelShell(title: "Workspace") {
+        MGPanelShell(title: "Workspace", tone: .workspace) {
             if appModel.remoteRoots.isEmpty {
                 Text("No approved workspace roots are available yet.")
                     .font(.subheadline)
@@ -1016,7 +1030,7 @@ struct MGConnectionSheet: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(MGAppBackground())
+            .background(MGAppBackground(tone: .settings))
             .navigationTitle("Connection")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1024,6 +1038,7 @@ struct MGConnectionSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .mgNavigationChrome()
         }
     }
 
@@ -1056,7 +1071,7 @@ struct MGPlusMenuOverlay: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.52)
+            MGTheme.scrim
                 .ignoresSafeArea()
                 .onTapGesture { dismiss() }
 
@@ -1128,7 +1143,7 @@ struct MGPlusMenuOverlay: View {
                 }
                 .padding(.top, 22)
                 .padding(.bottom, 18)
-                .mgInteractiveGlass(cornerRadius: 32)
+                .mgReadableSurface(cornerRadius: 32)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 18)
             }
@@ -1161,9 +1176,10 @@ struct MGSlashCommandsSheet: View {
                 .listRowBackground(Color.clear)
             }
             .scrollContentBackground(.hidden)
-            .background(MGAppBackground())
+            .background(MGAppBackground(tone: .activity))
             .navigationTitle("Slash commands")
             .navigationBarTitleDisplayMode(.inline)
+            .mgNavigationChrome()
         }
     }
 }
@@ -1226,7 +1242,7 @@ struct MGPhotoLibrarySheet: View {
                 Spacer()
             }
             .padding(20)
-            .background(MGAppBackground())
+            .background(MGAppBackground(tone: .brand))
             .navigationTitle("Photos")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1234,6 +1250,7 @@ struct MGPhotoLibrarySheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .mgNavigationChrome()
         }
         .task(id: selectedItems) {
             for item in selectedItems {
@@ -1282,9 +1299,10 @@ struct MGPluginsSheet: View {
                 .listRowBackground(Color.clear)
             }
             .scrollContentBackground(.hidden)
-            .background(MGAppBackground())
+            .background(MGAppBackground(tone: .workspace))
             .navigationTitle("Bridge tools")
             .navigationBarTitleDisplayMode(.inline)
+            .mgNavigationChrome()
         }
     }
 }
@@ -1311,9 +1329,10 @@ struct MGFileMentionsSheet: View {
             }
             .searchable(text: $query, prompt: "Search approved workspace files")
             .scrollContentBackground(.hidden)
-            .background(MGAppBackground())
+            .background(MGAppBackground(tone: .workspace))
             .navigationTitle("Mention file")
             .navigationBarTitleDisplayMode(.inline)
+            .mgNavigationChrome()
         }
     }
 
@@ -1345,7 +1364,7 @@ struct MGApprovalSteeringSheet: View {
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 180)
                     .padding(12)
-                    .mgInteractiveGlass(cornerRadius: 20)
+                    .mgReadableSurface(cornerRadius: 20)
                 MGPrimaryActionButton(title: "Send steering") {
                     appModel.steerApproval(requestID: requestID, guidance: guidance)
                     dismiss()
@@ -1353,9 +1372,10 @@ struct MGApprovalSteeringSheet: View {
                 Spacer()
             }
             .padding(20)
-            .background(MGAppBackground())
+            .background(MGAppBackground(tone: .warning))
             .navigationTitle("Steer")
             .navigationBarTitleDisplayMode(.inline)
+            .mgNavigationChrome()
         }
     }
 }
@@ -1411,7 +1431,7 @@ struct MGScheduleTaskSheet: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(MGAppBackground())
+            .background(MGAppBackground(tone: .activity))
             .navigationTitle("Schedule task")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1422,6 +1442,7 @@ struct MGScheduleTaskSheet: View {
                     Button("Save") { dismiss() }
                 }
             }
+            .mgNavigationChrome()
         }
     }
 }
@@ -1465,7 +1486,7 @@ struct MGPairingCodeSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                MGAppBackground()
+                MGAppBackground(tone: .brand)
 
                 ScrollView(showsIndicators: false) {
                     MGDarkGlassSheet {
@@ -1519,6 +1540,7 @@ struct MGPairingCodeSheet: View {
                     }
                 }
             }
+            .mgNavigationChrome()
         }
     }
 

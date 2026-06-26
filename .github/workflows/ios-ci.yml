@@ -92,20 +92,16 @@ jobs:
             echo "Expected app bundle not found at $APP_PATH"
             exit 1
           fi
-          mkdir -p outputs/release build/Payload
+          mkdir -p artifacts build/Payload
           rm -rf build/Payload
           mkdir -p build/Payload
-          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Info.plist")
-          BUILD_NUMBER=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Info.plist")
-          IPA_PATH="outputs/release/Maxgravity-${VERSION}-${BUILD_NUMBER}-unsigned.ipa"
+          IPA_PATH="artifacts/Maxgravity.ipa"
           (
             cd build
             cp -R "DerivedData/Build/Products/Release-iphoneos/Maxgravity.app" Payload/Maxgravity.app
             /usr/bin/zip -qry "../${IPA_PATH}" Payload
           )
           echo "IPA_PATH=${IPA_PATH}" >> "$GITHUB_ENV"
-          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
-          echo "BUILD_NUMBER=${BUILD_NUMBER}" >> "$GITHUB_ENV"
 
       - name: Validate IPA structure
         run: >
@@ -113,7 +109,7 @@ jobs:
           "${{ env.IPA_PATH }}"
           "com.antigravity.Maxgravity"
           "Maxgravity"
-          "outputs/release/Maxgravity-${{ env.VERSION }}-${{ env.BUILD_NUMBER }}-unsigned.sha256"
+          "artifacts/Maxgravity.ipa.sha256"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
@@ -121,5 +117,5 @@ jobs:
           name: maxgravity-ipa
           path: |
             ${{ env.IPA_PATH }}
-            outputs/release/Maxgravity-${{ env.VERSION }}-${{ env.BUILD_NUMBER }}-unsigned.sha256
+            artifacts/Maxgravity.ipa.sha256
           if-no-files-found: error

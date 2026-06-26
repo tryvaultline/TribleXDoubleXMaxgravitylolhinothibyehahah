@@ -219,7 +219,7 @@ struct MGSpaceRow: View {
                 .padding(.bottom, 16)
             }
         }
-        .mgInteractiveGlass(cornerRadius: 28)
+        .mgReadableSurface(cornerRadius: 28)
     }
 
     private func iconWell(symbol: String) -> some View {
@@ -333,7 +333,7 @@ struct MGDarkGlassSheet<Content: View>: View {
         }
         .padding(.horizontal, 18)
         .padding(.bottom, 18)
-        .mgInteractiveGlass(cornerRadius: 34)
+        .mgReadableSurface(cornerRadius: 34)
     }
 }
 
@@ -344,7 +344,7 @@ struct MGDarkGlassCard<Content: View>: View {
     var body: some View {
         content
             .padding(20)
-            .mgInteractiveGlass(cornerRadius: cornerRadius)
+            .mgReadableSurface(cornerRadius: cornerRadius)
     }
 }
 
@@ -355,14 +355,14 @@ struct MGGlassIconWell: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(.ultraThinMaterial)
+                .fill(MGTheme.insetSurface)
                 .overlay {
                     Circle()
-                        .fill(tone.opacity(0.20))
+                        .fill(tone.opacity(0.12))
                 }
                 .overlay(
                     Circle()
-                        .stroke(Color.white.opacity(0.09), lineWidth: 1)
+                        .stroke(MGTheme.border, lineWidth: 1)
                 )
             Image(systemName: systemName)
                 .font(.system(size: 22, weight: .semibold))
@@ -385,46 +385,48 @@ struct MGComposerAccessoryBar: View {
     var onSend: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
-            iconButton(symbol: "plus", action: onPlus, label: "Attachment menu")
-            iconButton(symbol: "slash", action: onSlash, label: "Slash commands")
-            iconButton(symbol: "@", action: onMention, label: "Mention file", usesText: true)
-            Spacer(minLength: 10)
+        MGGlassCluster(spacing: 12) {
+            HStack(spacing: 10) {
+                iconButton(symbol: "plus", action: onPlus, label: "Attachment menu")
+                iconButton(symbol: "slash", action: onSlash, label: "Slash commands")
+                iconButton(symbol: "@", action: onMention, label: "Mention file", usesText: true)
+                Spacer(minLength: 10)
 
-            Button(action: onModelPicker) {
-                HStack(spacing: 8) {
-                    Image(systemName: "sparkles.rectangle.stack.fill")
-                    Text(selectedModel)
-                        .lineLimit(1)
+                Button(action: onModelPicker) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "sparkles.rectangle.stack.fill")
+                        Text(selectedModel)
+                            .lineLimit(1)
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(MGTheme.primaryText)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 44)
                 }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(MGTheme.primaryText)
-                .padding(.horizontal, 14)
-                .frame(minHeight: 44)
-            }
-            .buttonStyle(MGPressableButtonStyle())
-            .mgInteractiveGlass(cornerRadius: 18)
+                .buttonStyle(MGPressableButtonStyle())
+                .mgInteractiveGlass(cornerRadius: 18)
 
-            iconButton(symbol: "mic.fill", action: onMicrophone, label: "Microphone")
+                iconButton(symbol: "mic.fill", action: onMicrophone, label: "Microphone")
 
-            Button(action: onSend) {
-                if isSending {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .tint(.black.opacity(0.82))
-                        .frame(width: 44, height: 44)
-                        .background(Color.white.opacity(0.72), in: Circle())
-                } else {
-                    Image(systemName: "arrow.up")
-                        .font(.body.weight(.bold))
-                        .foregroundStyle(.black)
-                        .frame(width: 44, height: 44)
-                        .background(canSend ? Color.white : Color.white.opacity(0.38), in: Circle())
+                Button(action: onSend) {
+                    if isSending {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .tint(.black.opacity(0.82))
+                            .frame(width: 44, height: 44)
+                            .background(Color.white.opacity(0.72), in: Circle())
+                    } else {
+                        Image(systemName: "arrow.up")
+                            .font(.body.weight(.bold))
+                            .foregroundStyle(.black)
+                            .frame(width: 44, height: 44)
+                            .background(canSend ? Color.white : Color.white.opacity(0.38), in: Circle())
+                    }
                 }
+                .buttonStyle(MGPressableButtonStyle())
+                .disabled(!canSend || isSending)
+                .accessibilityLabel("Send task")
             }
-            .buttonStyle(MGPressableButtonStyle())
-            .disabled(!canSend || isSending)
-            .accessibilityLabel("Send task")
         }
     }
 
@@ -483,7 +485,7 @@ struct MGComposer: View {
                             .foregroundStyle(MGTheme.primaryText)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 8)
-                            .mgInteractiveGlass(cornerRadius: 16)
+                            .mgReadableSurface(cornerRadius: 16)
                         }
                     }
                 }
@@ -528,7 +530,17 @@ struct MGComposer: View {
                     .foregroundStyle(MGTheme.primaryText)
                     .frame(minHeight: 188)
                     .tint(.white)
+                    .padding(.horizontal, 2)
             }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(MGTheme.insetSurface.opacity(0.92))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(MGTheme.border, lineWidth: 1)
+            )
 
             HStack {
                 Text("Focused task composer")
@@ -553,7 +565,7 @@ struct MGComposer: View {
             )
         }
         .padding(16)
-        .mgInteractiveGlass(cornerRadius: 30)
+        .mgReadableSurface(cornerRadius: 30)
     }
 }
 
@@ -572,7 +584,7 @@ struct MGThreadReplyComposer: View {
                 .tint(.white)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
-                .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .background(MGTheme.insetSurface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
             Button(action: onSend) {
                 if isSending {
@@ -596,12 +608,7 @@ struct MGThreadReplyComposer: View {
         .padding(.horizontal, 14)
         .padding(.top, 10)
         .padding(.bottom, 10)
-        .background(MGTheme.background.opacity(0.96))
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(MGTheme.border)
-                .frame(height: 1)
-        }
+        .mgInteractiveGlass(cornerRadius: 28)
     }
 
     private var canSend: Bool {
@@ -646,7 +653,7 @@ struct MGAgentActivityTimeline: View {
             }
         }
         .padding(14)
-        .mgInteractiveGlass(cornerRadius: 22)
+        .mgReadableSurface(cornerRadius: 22)
     }
 
     private func iconColor(for event: MGActivityEvent) -> Color {
@@ -708,7 +715,7 @@ struct MGArtifactRow: View {
             .frame(minHeight: 44)
         }
         .buttonStyle(MGPressableButtonStyle())
-        .mgInteractiveGlass(cornerRadius: 20)
+        .mgReadableSurface(cornerRadius: 20)
     }
 
     private var symbol: String {
@@ -747,7 +754,7 @@ struct MGDiffSummary: View {
             Spacer()
         }
         .padding(12)
-        .mgInteractiveGlass(cornerRadius: 20)
+        .mgReadableSurface(cornerRadius: 20)
     }
 }
 
@@ -792,7 +799,7 @@ struct MGApprovalPanel: View {
             }
         }
         .padding(18)
-        .mgInteractiveGlass(cornerRadius: 28)
+        .mgReadableSurface(cornerRadius: 28)
     }
 }
 
@@ -844,7 +851,7 @@ struct MGCompletionEmbed: View {
             .buttonStyle(MGPrimaryButtonStyle())
         }
         .padding(18)
-        .mgInteractiveGlass(cornerRadius: 30)
+        .mgReadableSurface(cornerRadius: 30)
     }
 
     private func metricRow(_ title: String, value: String) -> some View {
@@ -908,7 +915,7 @@ struct MGTaskContextSheet: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(MGAppBackground())
+            .background(MGAppBackground(tone: .workspace))
             .navigationTitle("Task context")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -916,6 +923,7 @@ struct MGTaskContextSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .mgNavigationChrome()
         }
     }
 }
@@ -947,9 +955,10 @@ struct MGRemoteFolderPicker: View {
                 .buttonStyle(.plain)
             }
             .scrollContentBackground(.hidden)
-            .background(MGAppBackground())
+            .background(MGAppBackground(tone: .workspace))
             .navigationTitle("Choose folder")
             .navigationBarTitleDisplayMode(.inline)
+            .mgNavigationChrome()
         }
     }
 }
@@ -1000,9 +1009,10 @@ struct MGModelPicker: View {
                 .listRowBackground(Color.clear)
             }
             .scrollContentBackground(.hidden)
-            .background(MGAppBackground())
+            .background(MGAppBackground(tone: .activity))
             .navigationTitle("Select model")
             .navigationBarTitleDisplayMode(.inline)
+            .mgNavigationChrome()
         }
     }
 }
@@ -1020,7 +1030,7 @@ struct MGSettingsGroup<Content: View>: View {
                 content
             }
             .padding(14)
-            .mgInteractiveGlass(cornerRadius: 26)
+            .mgReadableSurface(cornerRadius: 26)
         }
     }
 }
@@ -1031,7 +1041,7 @@ struct MGGlassSurface<Content: View>: View {
 
     var body: some View {
         content
-            .mgInteractiveGlass(cornerRadius: cornerRadius)
+            .mgReadableSurface(cornerRadius: cornerRadius)
     }
 }
 
@@ -1121,7 +1131,7 @@ struct MGFloatingPanelPresenter<PanelContent: View>: UIViewControllerRepresentab
             let panel = FloatingPanelController()
             panel.isRemovalInteractionEnabled = true
             panel.surfaceView.appearance.cornerRadius = 34
-            panel.surfaceView.appearance.backgroundColor = UIColor.black.withAlphaComponent(0.82)
+            panel.surfaceView.appearance.backgroundColor = MGTheme.backgroundUIColor.withAlphaComponent(0.92)
             panel.surfaceView.grabberHandle.isHidden = false
             let hosting = UIHostingController(rootView: panelContent)
             hosting.view.backgroundColor = .clear

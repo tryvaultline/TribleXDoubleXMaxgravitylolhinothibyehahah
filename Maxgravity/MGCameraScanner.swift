@@ -49,7 +49,7 @@ class ScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDel
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .black
+        view.backgroundColor = MGTheme.backgroundUIColor
         checkCameraPermissions()
     }
 
@@ -125,7 +125,7 @@ class ScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDel
 
     private func addScannerOverlay() {
         let overlayView = UIView(frame: view.bounds)
-        overlayView.backgroundColor = UIColor.black.withAlphaComponent(0.5)
+        overlayView.backgroundColor = MGTheme.backgroundUIColor.withAlphaComponent(0.34)
 
         let maskLayer = CAShapeLayer()
         let path = CGMutablePath()
@@ -154,7 +154,7 @@ class ScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDel
         let flashButton = UIButton(type: .system)
         flashButton.setImage(UIImage(systemName: "flashlight.off.fill"), for: .normal)
         flashButton.tintColor = .white
-        flashButton.backgroundColor = UIColor.black.withAlphaComponent(0.6)
+        flashButton.backgroundColor = MGTheme.backgroundUIColor.withAlphaComponent(0.58)
         flashButton.frame = CGRect(x: (view.bounds.width - 50) / 2, y: y + width + 30, width: 50, height: 50)
         flashButton.layer.cornerRadius = 25
         flashButton.addTarget(self, action: #selector(toggleFlash), for: .touchUpInside)

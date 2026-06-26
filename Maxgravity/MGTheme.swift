@@ -28,10 +28,12 @@ struct MGLiquidLensRepresentable: UIViewRepresentable {
 #endif
 
 enum MGTheme {
-    static let background = Color.black
-    static let surface = Color(red: 0.10, green: 0.10, blue: 0.11)
-    static let elevatedSurface = Color(red: 0.15, green: 0.15, blue: 0.16)
-    static let denseSurface = Color(red: 0.13, green: 0.13, blue: 0.14)
+    static let background = Color(red: 0.027, green: 0.035, blue: 0.051)
+    static let backgroundSecondary = Color(red: 0.040, green: 0.048, blue: 0.068)
+    static let surface = Color(red: 0.085, green: 0.097, blue: 0.126)
+    static let elevatedSurface = Color(red: 0.105, green: 0.118, blue: 0.152)
+    static let denseSurface = Color(red: 0.072, green: 0.083, blue: 0.109)
+    static let insetSurface = Color(red: 0.118, green: 0.131, blue: 0.166)
     static let border = Color.white.opacity(0.09)
     static let strongBorder = Color.white.opacity(0.16)
     static let primaryText = Color(red: 0.96, green: 0.95, blue: 0.92)
@@ -41,6 +43,14 @@ enum MGTheme {
     static let warning = Color(red: 0.94, green: 0.73, blue: 0.29)
     static let danger = Color(red: 0.96, green: 0.37, blue: 0.34)
     static let shadow = Color.black.opacity(0.38)
+    static let scrim = Color.black.opacity(0.34)
+    static let brandAmbient = Color(red: 0.96, green: 0.46, blue: 0.23)
+    static let workspaceAmbient = Color(red: 0.30, green: 0.50, blue: 0.88)
+    static let activityAmbient = Color(red: 0.58, green: 0.72, blue: 0.94)
+    static let settingsAmbient = Color(red: 0.74, green: 0.78, blue: 0.88)
+    static let warningAmbient = Color(red: 0.88, green: 0.62, blue: 0.25)
+    static let dangerAmbient = Color(red: 0.90, green: 0.33, blue: 0.31)
+    static let backgroundUIColor = UIColor(red: 0.027, green: 0.035, blue: 0.051, alpha: 1)
     static let brandGradient = LinearGradient(
         colors: [
             Color(red: 1.0, green: 0.49, blue: 0.22),
@@ -50,6 +60,51 @@ enum MGTheme {
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
+}
+
+enum MGBackdropTone {
+    case neutral
+    case brand
+    case activity
+    case workspace
+    case settings
+    case warning
+    case danger
+
+    var primaryGlow: Color {
+        switch self {
+        case .neutral: MGTheme.settingsAmbient
+        case .brand: MGTheme.brandAmbient
+        case .activity: MGTheme.activityAmbient
+        case .workspace: MGTheme.workspaceAmbient
+        case .settings: MGTheme.settingsAmbient
+        case .warning: MGTheme.warningAmbient
+        case .danger: MGTheme.dangerAmbient
+        }
+    }
+
+    var secondaryGlow: Color {
+        switch self {
+        case .neutral: MGTheme.workspaceAmbient
+        case .brand: MGTheme.settingsAmbient
+        case .activity: MGTheme.brandAmbient
+        case .workspace: MGTheme.activityAmbient
+        case .settings: MGTheme.brandAmbient
+        case .warning: MGTheme.brandAmbient
+        case .danger: MGTheme.warningAmbient
+        }
+    }
+}
+
+extension MGAppSection {
+    var backdropTone: MGBackdropTone {
+        switch self {
+        case .spaces: .brand
+        case .activity: .activity
+        case .workspace: .workspace
+        case .settings: .settings
+        }
+    }
 }
 
 enum MGHaptics {
@@ -130,20 +185,46 @@ extension View {
     func mgInteractiveGlass(cornerRadius: CGFloat = 22) -> some View {
         modifier(MGInteractiveGlassModifier(cornerRadius: cornerRadius))
     }
+
+    func mgNavigationChrome() -> some View {
+        modifier(MGNavigationChromeModifier())
+    }
 }
 
 private struct MGReadableSurfaceModifier: ViewModifier {
+    @Environment(\.accessibilityIncreaseContrast) private var increaseContrast
     let cornerRadius: CGFloat
 
     func body(content: Content) -> some View {
         content
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(MGTheme.denseSurface)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                MGTheme.elevatedSurface.opacity(0.98),
+                                MGTheme.denseSurface.opacity(0.98)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .overlay(alignment: .top) {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.05), Color.clear],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .frame(height: max(20, cornerRadius * 0.85))
+                            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                    }
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(MGTheme.border, lineWidth: 1)
+                    .stroke(increaseContrast ? MGTheme.strongBorder : MGTheme.border, lineWidth: 1)
             )
             .shadow(color: MGTheme.shadow, radius: 18, y: 8)
     }
@@ -151,6 +232,7 @@ private struct MGReadableSurfaceModifier: ViewModifier {
 
 private struct MGInteractiveGlassModifier: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityIncreaseContrast) private var increaseContrast
     let cornerRadius: CGFloat
 
     func body(content: Content) -> some View {
@@ -165,7 +247,7 @@ private struct MGInteractiveGlassModifier: ViewModifier {
             }
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(MGTheme.strongBorder, lineWidth: 1)
+                    .stroke(increaseContrast ? Color.white.opacity(0.22) : MGTheme.strongBorder, lineWidth: 1)
             }
             .shadow(color: MGTheme.shadow, radius: 20, y: 10)
     }
@@ -175,6 +257,19 @@ private struct MGInteractiveGlassModifier: ViewModifier {
         if #available(iOS 26.0, *) {
             Color.clear
                 .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.035),
+                                    Color.white.opacity(0.01)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
         } else {
             #if canImport(LiquidGlassKit)
             MGLiquidGlassRepresentable()
@@ -184,9 +279,38 @@ private struct MGInteractiveGlassModifier: ViewModifier {
                         .fill(
                             LinearGradient(
                                 colors: [
-                                    Color.white.opacity(0.08),
-                                    MGTheme.elevatedSurface.opacity(0.68),
-                                    Color.black.opacity(0.08)
+                                    Color.white.opacity(0.05),
+                                    MGTheme.elevatedSurface.opacity(0.28),
+                                    Color.clear
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+                .overlay(alignment: .top) {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.12), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .frame(height: max(28, cornerRadius))
+                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                }
+            #else
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(.thinMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.06),
+                                    MGTheme.elevatedSurface.opacity(0.26),
+                                    Color.clear
                                 ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
@@ -205,37 +329,16 @@ private struct MGInteractiveGlassModifier: ViewModifier {
                         .frame(height: max(28, cornerRadius))
                         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 }
-            #else
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.10),
-                                    MGTheme.elevatedSurface.opacity(0.72),
-                                    Color.black.opacity(0.10)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                }
-                .overlay(alignment: .top) {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.18), Color.clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .frame(height: max(28, cornerRadius))
-                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                }
             #endif
         }
+    }
+}
+
+private struct MGNavigationChromeModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
     }
 }
 
@@ -296,21 +399,77 @@ struct MGSecondaryIconButtonStyle: ButtonStyle {
 }
 
 struct MGAppBackground: View {
+    var tone: MGBackdropTone = .neutral
+
     var body: some View {
-        ZStack {
-            MGTheme.background
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(0.035),
-                    Color.clear,
-                    MGTheme.background
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .blendMode(.screen)
+        GeometryReader { proxy in
+            let size = proxy.size
+
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        MGTheme.backgroundSecondary,
+                        MGTheme.background
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
+                ambientGlow(
+                    color: tone.primaryGlow,
+                    opacity: 0.13,
+                    center: UnitPoint(x: 0.18, y: 0.16),
+                    radius: max(size.width, size.height) * 0.48
+                )
+
+                ambientGlow(
+                    color: tone.secondaryGlow,
+                    opacity: 0.08,
+                    center: UnitPoint(x: 0.84, y: 0.28),
+                    radius: max(size.width, size.height) * 0.34
+                )
+
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.03),
+                        Color.clear,
+                        Color.black.opacity(0.22)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
         }
         .ignoresSafeArea()
+    }
+
+    private func ambientGlow(color: Color, opacity: Double, center: UnitPoint, radius: CGFloat) -> some View {
+        RadialGradient(
+            colors: [
+                color.opacity(opacity),
+                color.opacity(opacity * 0.45),
+                Color.clear
+            ],
+            center: center,
+            startRadius: radius * 0.02,
+            endRadius: radius
+        )
+        .blur(radius: 28)
+    }
+}
+
+struct MGGlassCluster<Content: View>: View {
+    var spacing: CGFloat = 18
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: spacing) {
+                content
+            }
+        } else {
+            content
+        }
     }
 }
 

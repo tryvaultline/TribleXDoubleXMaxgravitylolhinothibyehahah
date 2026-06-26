@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 struct MGRootView: View {
     @Environment(MGAppModel.self) private var appModel
@@ -8,7 +9,7 @@ struct MGRootView: View {
             MGAppBackground()
             if appModel.hasConnectedComputer {
                 NavigationStack(path: Binding(get: { appModel.path }, set: { appModel.path = $0 })) {
-                    MGSpacesView()
+                    MGMainShellView()
                         .navigationDestination(for: Route.self, destination: destinationView)
                 }
             } else {
@@ -28,18 +29,6 @@ struct MGRootView: View {
         .fullScreenCover(item: Binding(get: { appModel.presentedFullScreen }, set: { appModel.presentedFullScreen = $0 })) { destination in
             fullScreen(for: destination)
         }
-        .background {
-            floatingPanelPresenter
-        }
-#if !canImport(FloatingPanel)
-        .sheet(item: Binding(get: { appModel.presentedPanel }, set: { appModel.presentedPanel = $0 })) { panel in
-            panelView(for: panel)
-                .presentationDragIndicator(.visible)
-                .presentationCornerRadius(34)
-                .presentationBackground(.clear)
-                .presentationDetents([.fraction(0.42), .large])
-        }
-#endif
     }
 
     @ViewBuilder
@@ -67,6 +56,10 @@ struct MGRootView: View {
             MGSlashCommandsSheet()
         case .fileMentions:
             MGFileMentionsSheet()
+        case .photoLibrary:
+            MGPhotoLibrarySheet()
+        case .plugins:
+            MGPluginsSheet()
         case .taskContext:
             MGTaskContextSheet()
         case .remoteFolderPicker:
@@ -92,41 +85,51 @@ struct MGRootView: View {
         }
     }
 
-    @ViewBuilder
-    private func panelView(for destination: MGPanelDestination) -> some View {
-        switch destination {
-        case .activity:
-            MGActivityPanelView()
-        case .settings:
-            MGSettingsPanelView()
-        }
-    }
-
-    @ViewBuilder
-    private var floatingPanelPresenter: some View {
-        if let panel = appModel.presentedPanel {
-            MGFloatingPanelPresenter(
-                isPresented: Binding(
-                    get: { appModel.presentedPanel != nil },
-                    set: { isPresented in
-                        if !isPresented {
-                            appModel.presentedPanel = nil
-                        }
-                    }
-                )
-            ) {
-                panelView(for: panel)
-            }
-            .frame(width: 0, height: 0)
-        }
-    }
-
     private func sheetDetents(for destination: MGSheetDestination) -> Set<PresentationDetent> {
         switch destination {
         case .connectionInfo, .approvalSteering:
             [.medium, .large]
-        case .modelPicker, .slashCommands, .fileMentions, .taskContext, .remoteFolderPicker, .scheduleTask, .pairingCode:
+        case .modelPicker, .slashCommands, .fileMentions, .photoLibrary, .plugins, .taskContext, .remoteFolderPicker, .scheduleTask, .pairingCode:
             [.large]
+        }
+    }
+}
+
+struct MGMainShellView: View {
+    @Environment(MGAppModel.self) private var appModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Group {
+                switch appModel.selectedSection {
+                case .spaces:
+                    MGSpacesView()
+                case .activity:
+                    MGActivityScreenView()
+                case .workspace:
+                    MGWorkspaceScreenView()
+                case .settings:
+                    MGSettingsScreenView()
+                }
+            }
+
+            MGAnimatedTabBar(
+                selectedSection: appModel.selectedSection,
+                unreadChats: runningChatCount,
+                settingsBadge: 1,
+                onSelect: appModel.selectSection
+            )
+            .padding(.horizontal, 14)
+            .padding(.top, 8)
+            .padding(.bottom, 10)
+            .background(MGAppBackground().ignoresSafeArea(edges: .bottom))
+        }
+        .navigationBarHidden(true)
+    }
+
+    private var runningChatCount: Int {
+        appModel.spaces.reduce(into: 0) { total, space in
+            total += space.chats.filter(\.isRunning).count
         }
     }
 }
@@ -198,6 +201,73 @@ struct MGFirstLaunchView: View {
     }
 }
 
+struct MGAnimatedTabBar: View {
+    let selectedSection: MGAppSection
+    let unreadChats: Int
+    let settingsBadge: Int
+    let onSelect: (MGAppSection) -> Void
+
+    @Namespace private var selectionNamespace
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ForEach(MGAppSection.allCases) { section in
+                Button {
+                    withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+                        onSelect(section)
+                    }
+                    MGHaptics.selection()
+                } label: {
+                    VStack(spacing: 6) {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: section.symbol)
+                                .font(.system(size: 27, weight: .semibold))
+                                .foregroundStyle(selectedSection == section ? Color(red: 0.22, green: 0.54, blue: 1.0) : MGTheme.primaryText)
+
+                            if badgeCount(for: section) > 0 {
+                                Text("\(badgeCount(for: section))")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 4)
+                                    .background(Capsule().fill(MGTheme.danger))
+                                    .offset(x: 12, y: -12)
+                            }
+                        }
+                        .frame(height: 34)
+
+                        Text(section.title)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(selectedSection == section ? Color(red: 0.22, green: 0.54, blue: 1.0) : MGTheme.primaryText)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 92)
+                    .background {
+                        if selectedSection == section {
+                            RoundedRectangle(cornerRadius: 38, style: .continuous)
+                                .fill(Color.white.opacity(0.08))
+                                .matchedGeometryEffect(id: "selected-tab", in: selectionNamespace)
+                        }
+                    }
+                }
+                .buttonStyle(MGPressableButtonStyle())
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .mgInteractiveGlass(cornerRadius: 44)
+    }
+
+    private func badgeCount(for section: MGAppSection) -> Int {
+        switch section {
+        case .spaces: unreadChats
+        case .settings: settingsBadge
+        default: 0
+        }
+    }
+}
+
 struct MGSpacesView: View {
     @Environment(MGAppModel.self) private var appModel
 
@@ -208,30 +278,9 @@ struct MGSpacesView: View {
                     title: "Your Spaces",
                     subtitle: "Choose a space, jump into a chat, or start a new task."
                 ) {
-                    VStack(alignment: .trailing, spacing: 10) {
-                        if let connection = appModel.connection {
-                            MGConnectionPill(status: connection) {
-                                appModel.presentedSheet = .connectionInfo
-                            }
-                        }
-                        HStack(spacing: 10) {
-                            Button {
-                                appModel.presentPanel(.activity)
-                            } label: {
-                                Image(systemName: "bolt.horizontal.fill")
-                                    .frame(width: 44, height: 44)
-                            }
-                            .buttonStyle(MGSecondaryIconButtonStyle())
-                            .accessibilityLabel("Open activity")
-
-                            Button {
-                                appModel.presentPanel(.settings)
-                            } label: {
-                                Image(systemName: "gearshape.fill")
-                                    .frame(width: 44, height: 44)
-                            }
-                            .buttonStyle(MGSecondaryIconButtonStyle())
-                            .accessibilityLabel("Open settings")
+                    if let connection = appModel.connection {
+                        MGConnectionPill(status: connection) {
+                            appModel.presentedSheet = .connectionInfo
                         }
                     }
                 }
@@ -325,12 +374,15 @@ struct MGNewTaskView: View {
         MGComposer(
             text: Binding(get: { appModel.draftPrompt }, set: { appModel.draftPrompt = $0 }),
             selectedModel: appModel.draftContext.selectedModel.title,
+            modelOptions: appModel.models,
             mentionedFiles: appModel.draftContext.mentionedFiles,
+            pickedPhotos: appModel.pickedPhotos,
             onRemoveFile: appModel.removeMentionedFile,
+            onRemovePhoto: appModel.removePickedPhoto,
             onPlus: { appModel.presentedFullScreen = .plusMenu },
             onSlash: { appModel.presentedSheet = .slashCommands },
             onMention: { appModel.presentedSheet = .fileMentions },
-            onModel: { appModel.presentedSheet = .modelPicker },
+            onSelectModel: appModel.updateDraftModel,
             onMicrophone: {
                 appModel.draftMicrophoneEnabled.toggle()
                 MGHaptics.selection()
@@ -491,8 +543,8 @@ struct MGChatThreadView: View {
         } else {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
-                    MGBrandMark(size: 18)
-                    Text("Maxgravity")
+                    MGGoogleAvatar(size: 20)
+                    Text("Antigravity")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(MGTheme.secondaryText)
                 }
@@ -620,6 +672,7 @@ struct MGTaskDetailView: View {
 }
 
 struct MGCodeViewerScreen: View {
+    @Environment(MGAppModel.self) private var appModel
     let title: String
 
     var body: some View {
@@ -638,18 +691,7 @@ struct MGCodeViewerScreen: View {
     }
 
     private var sampleCode: String {
-        """
-        struct BottomBar: View {
-            var body: some View {
-                HStack(spacing: 12) {
-                    Image(systemName: "square.grid.2x2.fill")
-                    Text("Spaces")
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-            }
-        }
-        """
+        appModel.workspaceFileContents[title] ?? "No live file content loaded for this path yet."
     }
 }
 
@@ -705,7 +747,7 @@ struct MGPanelShell<Content: View>: View {
     }
 }
 
-struct MGActivityPanelView: View {
+struct MGActivityScreenView: View {
     @Environment(MGAppModel.self) private var appModel
 
     var body: some View {
@@ -715,7 +757,6 @@ struct MGActivityPanelView: View {
                     VStack(spacing: 0) {
                         ForEach(bucket.items) { item in
                             Button {
-                                appModel.dismissPanel()
                                 if let route = item.route {
                                     appModel.path.append(route)
                                 } else if bucket.id == "scheduled" {
@@ -764,7 +805,7 @@ struct MGActivityPanelView: View {
     }
 }
 
-struct MGSettingsPanelView: View {
+struct MGSettingsScreenView: View {
     @Environment(MGAppModel.self) private var appModel
 
     var body: some View {
@@ -789,6 +830,22 @@ struct MGSettingsPanelView: View {
                     divider
                     settingsRow("drop", "Appearance", "System / Dark / High contrast")
                 }
+            }
+
+            MGSettingsGroup(title: "Antigravity account") {
+                HStack(spacing: 14) {
+                    MGGoogleAvatar(size: 44)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Google account")
+                            .foregroundStyle(MGTheme.primaryText)
+                        Text("Connected through the local Antigravity desktop session")
+                            .font(.caption)
+                            .foregroundStyle(MGTheme.secondaryText)
+                    }
+                    Spacer()
+                }
+                .frame(minHeight: 44)
+                .padding(.vertical, 10)
             }
 
             MGSettingsGroup(title: "Diagnostics") {
@@ -838,6 +895,94 @@ struct MGSettingsPanelView: View {
         .frame(minHeight: 44)
         .padding(.vertical, 10)
         .buttonStyle(MGPressableButtonStyle(foreground: destructive ? MGTheme.danger : MGTheme.primaryText))
+    }
+}
+
+struct MGWorkspaceScreenView: View {
+    @Environment(MGAppModel.self) private var appModel
+
+    var body: some View {
+        MGPanelShell(title: "Workspace") {
+            if appModel.remoteRoots.isEmpty {
+                Text("No approved workspace roots are available yet.")
+                    .font(.subheadline)
+                    .foregroundStyle(MGTheme.secondaryText)
+                    .padding(.top, 12)
+            }
+
+            ForEach(appModel.remoteRoots) { root in
+                MGSettingsGroup(title: root.name) {
+                    VStack(spacing: 0) {
+                        Button {
+                            Task {
+                                await appModel.loadWorkspaceRoot(root)
+                            }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "folder.badge.gearshape")
+                                    .foregroundStyle(MGTheme.primaryText)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(root.path)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(MGTheme.primaryText)
+                                        .multilineTextAlignment(.leading)
+                                    Text(appModel.workspaceLoadingRoots.contains(root.id) ? "Loading live files..." : "Tap to refresh live contents from the paired computer")
+                                        .font(.caption)
+                                        .foregroundStyle(MGTheme.secondaryText)
+                                }
+                                Spacer()
+                                Image(systemName: "arrow.clockwise")
+                                    .foregroundStyle(MGTheme.secondaryText)
+                            }
+                            .frame(minHeight: 44)
+                            .padding(.vertical, 12)
+                        }
+                        .buttonStyle(MGPressableButtonStyle())
+
+                        if let nodes = appModel.workspaceNodesByRoot[root.id], !nodes.isEmpty {
+                            Divider().overlay(MGTheme.border)
+                            ForEach(nodes) { node in
+                                Button {
+                                    if !node.isDirectory {
+                                        Task {
+                                            await appModel.openWorkspaceFile(rootId: root.id, path: node.path)
+                                        }
+                                    }
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: node.isDirectory ? "folder.fill" : "doc.text")
+                                            .foregroundStyle(node.isDirectory ? MGTheme.warning : MGTheme.primaryText)
+                                            .frame(width: 18)
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(node.name)
+                                                .foregroundStyle(MGTheme.primaryText)
+                                            Text(node.path)
+                                                .font(.caption)
+                                                .foregroundStyle(MGTheme.secondaryText)
+                                        }
+                                        Spacer()
+                                        Image(systemName: node.isDirectory ? "folder" : "chevron.right")
+                                            .font(.caption)
+                                            .foregroundStyle(MGTheme.secondaryText)
+                                    }
+                                    .frame(minHeight: 44)
+                                    .padding(.vertical, 10)
+                                }
+                                .buttonStyle(MGPressableButtonStyle())
+                                if node.id != nodes.last?.id {
+                                    Divider().overlay(MGTheme.border)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .task {
+            if let root = appModel.remoteRoots.first, appModel.workspaceNodesByRoot[root.id] == nil {
+                await appModel.loadWorkspaceRoot(root)
+            }
+        }
     }
 }
 
@@ -896,7 +1041,6 @@ struct MGPlusMenuOverlay: View {
     @Environment(\.dismiss) private var dismiss
 
     private let primaryRows: [(String, String)] = [
-        ("camera.fill", "Camera"),
         ("photo.on.rectangle.angled", "Photos"),
         ("doc.fill", "Files"),
         ("puzzlepiece.extension.fill", "Plugins")
@@ -906,7 +1050,6 @@ struct MGPlusMenuOverlay: View {
         ("at", "Mention workspace file"),
         ("list.bullet.clipboard", "Plan mode"),
         ("folder", "Choose working folder"),
-        ("folder.badge.plus", "Create folder"),
         ("lock.shield", "Permissions")
     ]
 
@@ -923,6 +1066,10 @@ struct MGPlusMenuOverlay: View {
                         Button {
                             if row.1 == "Files" {
                                 appModel.presentedSheet = .remoteFolderPicker
+                            } else if row.1 == "Photos" {
+                                appModel.presentedSheet = .photoLibrary
+                            } else if row.1 == "Plugins" {
+                                appModel.presentedSheet = .plugins
                             }
                             dismiss()
                         } label: {
@@ -989,20 +1136,153 @@ struct MGPlusMenuOverlay: View {
 }
 
 struct MGSlashCommandsSheet: View {
+    @Environment(MGAppModel.self) private var appModel
+    @Environment(\.dismiss) private var dismiss
     let commands = ["/plan", "/review", "/test", "/summarize", "/schedule", "/explain"]
 
     var body: some View {
         NavigationStack {
             List(commands, id: \.self) { command in
-                Text(command)
-                    .font(.body.monospaced().weight(.medium))
-                    .foregroundStyle(MGTheme.primaryText)
-                    .frame(minHeight: 44, alignment: .leading)
-                    .listRowBackground(Color.clear)
+                Button {
+                    if appModel.draftPrompt.isEmpty {
+                        appModel.draftPrompt = "\(command) "
+                    } else {
+                        appModel.draftPrompt += "\n\(command) "
+                    }
+                    dismiss()
+                } label: {
+                    Text(command)
+                        .font(.body.monospaced().weight(.medium))
+                        .foregroundStyle(MGTheme.primaryText)
+                        .frame(minHeight: 44, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(Color.clear)
             }
             .scrollContentBackground(.hidden)
             .background(MGAppBackground())
             .navigationTitle("Slash commands")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+}
+
+struct MGPhotoLibrarySheet: View {
+    @Environment(MGAppModel.self) private var appModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedItems: [PhotosPickerItem] = []
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 18) {
+                PhotosPicker(
+                    selection: $selectedItems,
+                    maxSelectionCount: 8,
+                    matching: .images
+                ) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "photo.stack.fill")
+                        Text("Pick images from Photos")
+                        Spacer()
+                    }
+                    .font(.headline)
+                    .foregroundStyle(MGTheme.primaryText)
+                    .padding(16)
+                    .mgInteractiveGlass(cornerRadius: 24)
+                }
+
+                if appModel.pickedPhotos.isEmpty {
+                    Text("No photos selected yet.")
+                        .font(.subheadline)
+                        .foregroundStyle(MGTheme.secondaryText)
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(appModel.pickedPhotos) { photo in
+                                if let image = UIImage(data: photo.data) {
+                                    ZStack(alignment: .topTrailing) {
+                                        Image(uiImage: image)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: 92, height: 92)
+                                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                                        Button {
+                                            appModel.removePickedPhoto(photo.id)
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .font(.title3)
+                                                .foregroundStyle(.white)
+                                        }
+                                        .offset(x: 6, y: -6)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+
+                Spacer()
+            }
+            .padding(20)
+            .background(MGAppBackground())
+            .navigationTitle("Photos")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .task(id: selectedItems) {
+            for item in selectedItems {
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    appModel.addPickedPhoto(data: data)
+                }
+            }
+            if !selectedItems.isEmpty {
+                selectedItems = []
+            }
+        }
+    }
+}
+
+struct MGPluginsSheet: View {
+    @Environment(MGAppModel.self) private var appModel
+
+    var body: some View {
+        NavigationStack {
+            List(appModel.plugins) { plugin in
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text(plugin.name)
+                            .foregroundStyle(MGTheme.primaryText)
+                        if let kind = plugin.kind {
+                            Text(kind.uppercased())
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(MGTheme.secondaryText)
+                        }
+                    }
+                    if let detail = plugin.detail {
+                        Text(detail)
+                            .font(.caption)
+                            .foregroundStyle(MGTheme.secondaryText)
+                    }
+                    if let command = plugin.command, !command.isEmpty {
+                        Text(command)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(MGTheme.tertiaryText)
+                    }
+                    Text(plugin.path)
+                        .font(.caption2)
+                        .foregroundStyle(MGTheme.tertiaryText)
+                }
+                .frame(minHeight: 44, alignment: .leading)
+                .listRowBackground(Color.clear)
+            }
+            .scrollContentBackground(.hidden)
+            .background(MGAppBackground())
+            .navigationTitle("Bridge tools")
             .navigationBarTitleDisplayMode(.inline)
         }
     }
@@ -1037,12 +1317,7 @@ struct MGFileMentionsSheet: View {
     }
 
     private var filteredFiles: [String] {
-        let files = [
-            "@src/components/BottomBar.tsx",
-            "@README.md",
-            "@package.json",
-            "@src/routes/PlayerRoute.tsx"
-        ]
+        let files = appModel.mentionableFiles.map { "@\($0)" }
         if query.isEmpty {
             return files
         }

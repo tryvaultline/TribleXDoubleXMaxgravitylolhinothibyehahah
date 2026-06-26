@@ -8,6 +8,8 @@ import { MemoryTrustStore, TrustStore } from "./trust-store.js";
 import { redactSensitive } from "./redaction.js";
 import { WorkspaceBrowser, WorkspaceError } from "./workspace.js";
 import { AntigravityAdapter, AntigravityCliAccountAdapter, UnsupportedCapabilityError } from "./antigravity-adapter.js";
+import { readdir } from "node:fs/promises";
+import path from "node:path";
 
 interface BuildServerOptions {
   trustStore?: TrustStore;
@@ -98,7 +100,13 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     if (!auth) {
       return;
     }
-    return browser.listRoots();
+    return browser.listRoots().map((root) => ({
+      id: root.id,
+      name: root.name,
+      path: root.path,
+      isDirectory: true,
+      children: []
+    }));
   });
 
   app.get<{ Querystring: { rootId?: string; path?: string } }>("/v1/workspace/browse", async (request, reply) => {
@@ -110,7 +118,32 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
       return reply.code(400).send({ error: "ROOT_REQUIRED" });
     }
     try {
-      return await browser.browse(request.query.rootId, request.query.path ?? ".");
+      const nodes = await browser.browse(request.query.rootId, request.query.path ?? ".");
+      return nodes.map((node) => ({
+        id: node.path,
+        name: node.name,
+        path: node.path,
+        isDirectory: node.isDirectory,
+        children: []
+      }));
+    } catch (error) {
+      if (error instanceof WorkspaceError) {
+        return reply.code(error.code === "PATH_TRAVERSAL" ? 403 : 404).send({ error: error.code });
+      }
+      throw error;
+    }
+  });
+
+  app.get<{ Querystring: { rootId?: string; path?: string } }>("/v1/workspace/file", async (request, reply) => {
+    const auth = await authenticateRequest(pairing, request, reply);
+    if (!auth) {
+      return;
+    }
+    if (!request.query.rootId || !request.query.path) {
+      return reply.code(400).send({ error: "ROOT_AND_PATH_REQUIRED" });
+    }
+    try {
+      return await browser.readTextFile(request.query.rootId, request.query.path);
     } catch (error) {
       if (error instanceof WorkspaceError) {
         return reply.code(error.code === "PATH_TRAVERSAL" ? 403 : 404).send({ error: error.code });
@@ -157,17 +190,74 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     return spaces;
   });
 
+  app.post<{ Body: { rootId: string; path: string; fileName: string; base64Data: string } }>("/v1/workspace/import-image", async (request, reply) => {
+    const auth = await authenticateRequest(pairing, request, reply);
+    if (!auth) {
+      return;
+    }
+    const { rootId, path: relativePath, fileName, base64Data } = request.body;
+    if (!rootId || !relativePath || !fileName || !base64Data) {
+      return reply.code(400).send({ error: "INVALID_IMAGE_IMPORT_REQUEST" });
+    }
+    try {
+      const buffer = Buffer.from(base64Data, "base64");
+      const savedPath = await browser.writeBinaryFile(rootId, relativePath, fileName, buffer);
+      return { status: "created", path: savedPath };
+    } catch (error) {
+      if (error instanceof WorkspaceError) {
+        return reply.code(403).send({ error: error.code });
+      }
+      throw error;
+    }
+  });
+
+  app.get("/v1/models", async (request, reply) => {
+    const auth = await authenticateRequest(pairing, request, reply);
+    if (!auth) {
+      return;
+    }
+    return (adapter as AntigravityCliAccountAdapter).availableModels();
+  });
+
+  app.get("/v1/plugins", async (request, reply) => {
+    const auth = await authenticateRequest(pairing, request, reply);
+    if (!auth) {
+      return;
+    }
+    const extensionsDir = path.join(process.env.USERPROFILE ?? "C:\\Users\\kuroi", ".antigravity", "extensions");
+    try {
+      const entries = await readdir(extensionsDir, { withFileTypes: true });
+      return entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => ({
+          id: entry.name,
+          name: entry.name,
+          path: path.join(extensionsDir, entry.name)
+        }));
+    } catch {
+      return [];
+    }
+  });
+
+  app.get("/v1/tools", async (request, reply) => {
+    const auth = await authenticateRequest(pairing, request, reply);
+    if (!auth) {
+      return;
+    }
+    return (adapter as AntigravityCliAccountAdapter).availableTools();
+  });
+
   app.post("/v1/tasks", async (request, reply) => {
     const auth = await authenticateRequest(pairing, request, reply);
     if (!auth) {
       return;
     }
     const body = request.body as any;
-    const { spaceId, title, prompt, workspaceRoot } = body;
+    const { spaceId, title, prompt, workspaceRoot, selectedModelId } = body;
     
 
     const conv = await (adapter as AntigravityCliAccountAdapter).createConversation(spaceId, title || "New task");
-    await (adapter as AntigravityCliAccountAdapter).chat(conv.conversationId, prompt, workspaceRoot);
+    await (adapter as AntigravityCliAccountAdapter).chat(conv.conversationId, prompt, workspaceRoot, selectedModelId);
     return conv;
   });
 
@@ -289,7 +379,7 @@ function mapConversation(c: any) {
     timeline.push({
       id: `${c.id}-failed`,
       title: "Task failed",
-      detail: "Task execution failed.",
+      detail: c.lastError || "Task execution failed.",
       duration: "0s",
       tone: "critical",
       isComplete: true
@@ -321,7 +411,7 @@ function mapConversation(c: any) {
         {
           id: `${c.id}-msg-user`,
           role: "user",
-          body: `Start task: ${c.title}`,
+          body: c.prompt || `Start task: ${c.title}`,
           timestamp: c.createdAt,
           delivered: true,
           attachments: []

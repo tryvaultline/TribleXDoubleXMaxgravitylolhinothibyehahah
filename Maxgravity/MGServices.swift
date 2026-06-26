@@ -68,12 +68,16 @@ protocol MGBridgeClient {
     func availableModels() async throws -> [MGModelOption]
     func approvedRoots() async throws -> [MGRemoteFileNode]
     func capabilityMatrix() async throws -> [MGBridgeCapability]
+    func browseWorkspace(rootId: String, path: String) async throws -> [MGRemoteFileNode]
+    func readWorkspaceFile(rootId: String, path: String) async throws -> MGRemoteFileContent
+    func listPlugins() async throws -> [MGPluginInfo]
+    func importImage(rootId: String, path: String, fileName: String, data: Data) async throws -> String
     func preparePairingSession() async throws -> MGPairingQRCodePayload
     
     // Live integrations
     func isPaired() -> Bool
     func pairDevice(payload: MGPairingQRCodePayload, deviceName: String, fingerprint: String) async throws -> MGKeychainSession
-    func createTask(spaceId: String, title: String, prompt: String, workspaceRoot: String) async throws -> MGChatSummary
+    func createTask(spaceId: String, title: String, prompt: String, workspaceRoot: String, selectedModelId: String) async throws -> MGChatSummary
     func sendMessage(taskId: String, prompt: String, workspaceRoot: String) async throws
     func createFolder(rootId: String, path: String, name: String) async throws
     func getTask(taskId: String) async throws -> MGChatSummary
@@ -105,7 +109,7 @@ protocol MGSettingsStore {
 }
 
 struct MGInMemorySettingsStore: MGSettingsStore {
-    var defaultModelID: String = "auto"
+    var defaultModelID: String = "flash"
     var defaultPermissionMode: MGPermissionMode = .askWhenNeeded
     var defaultPlanMode: Bool = false
     var defaultSpaceID: String?
@@ -300,38 +304,33 @@ class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository,
     }
 
     func availableModels() async throws -> [MGModelOption] {
-        struct CapabilityResponse: Codable {
-            struct BridgeCap: Codable {
-                let id: String
-                let title: String
-                let status: String
-                let notes: String
-            }
-            struct AgentCap: Codable {
-                let id: String
-                let name: String
-                let description: String
-                let isRecommended: Bool
-                let state: String
-            }
-            let bridge: [BridgeCap]
-            let antigravity: [AgentCap]
+        struct ModelResponse: Codable {
+            let id: String
+            let name: String
+            let description: String
+            let speed: String
+            let effort: String
+            let isRecommended: Bool
+            let state: String
         }
+
         do {
-            let cap: CapabilityResponse = try await performRequest(path: "/v1/capabilities")
-            return cap.antigravity.map { agent in
+            let models: [ModelResponse] = try await performRequest(path: "/v1/models")
+            return models.map { model in
                 let availability: MGCapabilityState
-                switch agent.state.lowercased() {
+                switch model.state.lowercased() {
                 case "live": availability = .live
                 case "partial": availability = .partial
                 case "mock": availability = .mock
                 default: availability = .unsupported
                 }
                 return MGModelOption(
-                    id: agent.id,
-                    title: agent.name,
-                    subtitle: agent.description,
-                    isRecommended: agent.isRecommended,
+                    id: model.id,
+                    title: model.name,
+                    subtitle: model.description,
+                    speedLabel: model.speed,
+                    effortLabel: model.effort,
+                    isRecommended: model.isRecommended,
                     availability: availability
                 )
             }
@@ -342,6 +341,49 @@ class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository,
 
     func approvedRoots() async throws -> [MGRemoteFileNode] {
         return try await performRequest(path: "/v1/workspace/roots")
+    }
+
+    func browseWorkspace(rootId: String, path: String = ".") async throws -> [MGRemoteFileNode] {
+        guard let encodedRoot = rootId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let encodedPath = path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            throw NSError(domain: "MGRealBridgeClient", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid workspace query"])
+        }
+        return try await performRequest(path: "/v1/workspace/browse?rootId=\(encodedRoot)&path=\(encodedPath)")
+    }
+
+    func readWorkspaceFile(rootId: String, path: String) async throws -> MGRemoteFileContent {
+        guard let encodedRoot = rootId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let encodedPath = path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            throw NSError(domain: "MGRealBridgeClient", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid file query"])
+        }
+        return try await performRequest(path: "/v1/workspace/file?rootId=\(encodedRoot)&path=\(encodedPath)")
+    }
+
+    func listPlugins() async throws -> [MGPluginInfo] {
+        return try await performRequest(path: "/v1/tools")
+    }
+
+    func importImage(rootId: String, path: String, fileName: String, data: Data) async throws -> String {
+        struct ImportImageBody: Codable {
+            let rootId: String
+            let path: String
+            let fileName: String
+            let base64Data: String
+        }
+        struct ImportImageResponse: Codable {
+            let status: String
+            let path: String
+        }
+
+        let body = ImportImageBody(
+            rootId: rootId,
+            path: path,
+            fileName: fileName,
+            base64Data: data.base64EncodedString()
+        )
+        let bodyData = try JSONEncoder().encode(body)
+        let response: ImportImageResponse = try await performRequest(path: "/v1/workspace/import-image", method: "POST", body: bodyData)
+        return response.path
     }
 
     func capabilityMatrix() async throws -> [MGBridgeCapability] {
@@ -375,14 +417,15 @@ class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository,
         return MGFixtures.pairingPayload
     }
 
-    func createTask(spaceId: String, title: String, prompt: String, workspaceRoot: String) async throws -> MGChatSummary {
+    func createTask(spaceId: String, title: String, prompt: String, workspaceRoot: String, selectedModelId: String) async throws -> MGChatSummary {
         struct CreateTaskBody: Codable {
             let spaceId: String
             let title: String
             let prompt: String
             let workspaceRoot: String
+            let selectedModelId: String
         }
-        let body = CreateTaskBody(spaceId: spaceId, title: title, prompt: prompt, workspaceRoot: workspaceRoot)
+        let body = CreateTaskBody(spaceId: spaceId, title: title, prompt: prompt, workspaceRoot: workspaceRoot, selectedModelId: selectedModelId)
         let bodyData = try JSONEncoder().encode(body)
         
         struct CreateTaskResponse: Codable {
@@ -465,6 +508,10 @@ struct MGMockBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository
     func listSchedules() async throws -> [MGScheduledTask] { MGFixtures.schedules }
     func availableModels() async throws -> [MGModelOption] { MGFixtures.models }
     func approvedRoots() async throws -> [MGRemoteFileNode] { MGFixtures.remoteRoots }
+    func browseWorkspace(rootId: String, path: String) async throws -> [MGRemoteFileNode] { [] }
+    func readWorkspaceFile(rootId: String, path: String) async throws -> MGRemoteFileContent { MGRemoteFileContent(path: path, content: "") }
+    func listPlugins() async throws -> [MGPluginInfo] { [] }
+    func importImage(rootId: String, path: String, fileName: String, data: Data) async throws -> String { path + "/" + fileName }
     func capabilityMatrix() async throws -> [MGBridgeCapability] { MGFixtures.capabilities }
     func preparePairingSession() async throws -> MGPairingQRCodePayload { MGFixtures.pairingPayload }
     
@@ -472,7 +519,7 @@ struct MGMockBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository
     func pairDevice(payload: MGPairingQRCodePayload, deviceName: String, fingerprint: String) async throws -> MGKeychainSession {
         return MGKeychainSession(address: "", deviceId: "", deviceSecret: "", computerName: "")
     }
-    func createTask(spaceId: String, title: String, prompt: String, workspaceRoot: String) async throws -> MGChatSummary {
+    func createTask(spaceId: String, title: String, prompt: String, workspaceRoot: String, selectedModelId: String) async throws -> MGChatSummary {
         return MGFixtures.spaces[0].chats[0]
     }
     func sendMessage(taskId: String, prompt: String, workspaceRoot: String) async throws {}
@@ -543,9 +590,9 @@ final class MGTaskLiveActivityController {
 @Observable
 final class MGAppModel {
     var path: [Route] = []
+    var selectedSection: MGAppSection = .spaces
     var presentedSheet: MGSheetDestination?
     var presentedFullScreen: MGFullScreenDestination?
-    var presentedPanel: MGPanelDestination?
 
     var connection: MGComputerStatus?
     var trustedDevices: [MGTrustedDevice] = MGFixtures.trustedDevices
@@ -559,6 +606,12 @@ final class MGAppModel {
     var notificationPreferences = MGNotificationPreferences()
     var notificationsAuthorized = false
     var liveActivityDiagnostics = "Not started"
+    var workspaceNodesByRoot: [String: [MGRemoteFileNode]] = [:]
+    var workspaceLoadingRoots: Set<String> = []
+    var openedWorkspaceRootID: String?
+    var workspaceFileContents: [String: String] = [:]
+    var plugins: [MGPluginInfo] = []
+    var pickedPhotos: [MGPickedPhoto] = []
 
     var expandedSpaceIDs: Set<String> = []
 
@@ -568,7 +621,7 @@ final class MGAppModel {
         workingFolder: "",
         permissionMode: .askWhenNeeded,
         planMode: false,
-        selectedModel: MGModelOption(id: "auto", title: "Auto", subtitle: "Recommended model", isRecommended: true, availability: .live),
+        selectedModel: MGModelOption(id: "flash", title: "Gemini Flash", subtitle: "Recommended Antigravity route", speedLabel: "Fast", effortLabel: "Balanced", isRecommended: true, availability: .live),
         mentionedFiles: []
     )
 
@@ -597,11 +650,15 @@ final class MGAppModel {
                 models = try await bridge.availableModels()
                 remoteRoots = try await bridge.approvedRoots()
                 capabilities = try await bridge.capabilityMatrix()
+                plugins = try await bridge.listPlugins()
                 
                 // Initialize default workspace configurations
                 if let firstRoot = remoteRoots.first {
                     if draftContext.workingFolder.isEmpty {
                         draftContext.workingFolder = firstRoot.path
+                    }
+                    if openedWorkspaceRootID == nil {
+                        openedWorkspaceRootID = firstRoot.id
                     }
                 }
                 if let firstModel = models.first {
@@ -618,6 +675,7 @@ final class MGAppModel {
                 models = []
                 remoteRoots = []
                 capabilities = []
+                plugins = []
             }
             pairingPayload = try await bridge.preparePairingSession()
         } catch {
@@ -654,7 +712,6 @@ final class MGAppModel {
         path = []
         presentedSheet = nil
         presentedFullScreen = nil
-        presentedPanel = nil
     }
 
     func toggleSpace(_ spaceID: String) {
@@ -670,6 +727,7 @@ final class MGAppModel {
     }
 
     func openChat(_ chatID: String) {
+        selectedSection = .spaces
         path.append(.chat(chatID: chatID))
         startTaskEventStreaming(taskId: chatID)
     }
@@ -678,12 +736,8 @@ final class MGAppModel {
         presentedFullScreen = .newTask(spaceID: spaceID)
     }
 
-    func presentPanel(_ panel: MGPanelDestination) {
-        presentedPanel = panel
-    }
-
-    func dismissPanel() {
-        presentedPanel = nil
+    func selectSection(_ section: MGAppSection) {
+        selectedSection = section
     }
 
     func chat(with id: String) -> MGChatSummary? {
@@ -712,6 +766,8 @@ final class MGAppModel {
             .flatMap { $0.isEmpty ? nil : $0 } ?? "New task"
 
         let prompt = draftPrompt
+        let currentMentionedFiles = draftContext.mentionedFiles
+        let currentPickedPhotos = pickedPhotos
         let space = spaces[spaceIndex]
         let newChatID = UUID().uuidString
         let now = Date()
@@ -728,8 +784,10 @@ final class MGAppModel {
                     body: prompt,
                     timestamp: now,
                     delivered: true,
-                    attachments: draftContext.mentionedFiles.map {
+                    attachments: currentMentionedFiles.map {
                         MGArtifactSummary(id: UUID().uuidString, kind: .file, title: $0, detail: "Mentioned file")
+                    } + currentPickedPhotos.enumerated().map { index, _ in
+                        MGArtifactSummary(id: UUID().uuidString, kind: .screenshot, title: "Selected image \(index + 1)", detail: "Attached from Photos")
                     }
                 )
             ],
@@ -743,7 +801,7 @@ final class MGAppModel {
                     isComplete: false
                 )
             ],
-            files: draftContext.mentionedFiles,
+            files: currentMentionedFiles,
             diffs: [],
             commands: [],
             approval: nil,
@@ -762,6 +820,7 @@ final class MGAppModel {
         spaces[spaceIndex].chats.insert(optChat, at: 0)
         expandedSpaceIDs.insert(spaceID)
         draftPrompt = ""
+        pickedPhotos = []
         presentedFullScreen = nil
         openChat(optChat.id)
         
@@ -772,17 +831,30 @@ final class MGAppModel {
         
         Task {
             do {
+                var livePrompt = prompt
+                var importedPhotoPaths: [String] = []
+                if !currentPickedPhotos.isEmpty {
+                    importedPhotoPaths = try await importPickedPhotos(currentPickedPhotos)
+                    if !importedPhotoPaths.isEmpty {
+                        let attachmentBlock = importedPhotoPaths.map { "- \($0)" }.joined(separator: "\n")
+                        livePrompt += "\n\nAttached images saved into the workspace:\n\(attachmentBlock)"
+                    }
+                }
+
                 let realChat = try await bridge.createTask(
                     spaceId: spaceID,
                     title: title,
-                    prompt: prompt,
-                    workspaceRoot: draftContext.workingFolder
+                    prompt: livePrompt,
+                    workspaceRoot: draftContext.workingFolder,
+                    selectedModelId: draftContext.selectedModel.id
                 )
                 
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
                     if let idx = self.spaces[spaceIndex].chats.firstIndex(where: { $0.id == newChatID }) {
-                        self.spaces[spaceIndex].chats[idx] = realChat
+                        var mergedChat = realChat
+                        mergedChat.thread.files = currentMentionedFiles + importedPhotoPaths
+                        self.spaces[spaceIndex].chats[idx] = mergedChat
                         
                         // Swap route if open
                         if let pathIdx = self.path.firstIndex(of: .chat(chatID: newChatID)) {
@@ -817,6 +889,44 @@ final class MGAppModel {
         }
         
         return optChat
+    }
+
+    private func importPickedPhotos(_ photos: [MGPickedPhoto]) async throws -> [String] {
+        guard let targetRoot = resolveRootForWorkingFolder() else {
+            return []
+        }
+
+        let relativeFolder = relativeFolderPath(for: draftContext.workingFolder, rootPath: targetRoot.path)
+        let uploadFolderName = "maxgravity-imports"
+        try? await bridge.createFolder(rootId: targetRoot.id, path: relativeFolder, name: uploadFolderName)
+        let finalFolder = [relativeFolder, uploadFolderName]
+            .filter { !$0.isEmpty && $0 != "." }
+            .joined(separator: "/")
+
+        var savedPaths: [String] = []
+        for (index, photo) in photos.enumerated() {
+            let fileName = "ios-photo-\(Int(Date().timeIntervalSince1970))-\(index + 1).jpg"
+            let saved = try await bridge.importImage(rootId: targetRoot.id, path: finalFolder.isEmpty ? "." : finalFolder, fileName: fileName, data: photo.data)
+            savedPaths.append(saved)
+        }
+        return savedPaths
+    }
+
+    private func resolveRootForWorkingFolder() -> MGRemoteFileNode? {
+        remoteRoots
+            .sorted { $0.path.count > $1.path.count }
+            .first(where: { draftContext.workingFolder.hasPrefix($0.path) })
+    }
+
+    private func relativeFolderPath(for absolutePath: String, rootPath: String) -> String {
+        let normalizedRoot = rootPath.trimmingCharacters(in: CharacterSet(charactersIn: "\\/"))
+        let normalizedAbsolute = absolutePath.trimmingCharacters(in: CharacterSet(charactersIn: "\\/"))
+        if normalizedAbsolute == normalizedRoot {
+            return "."
+        }
+        let relative = normalizedAbsolute.replacingOccurrences(of: normalizedRoot + "\\", with: "")
+            .replacingOccurrences(of: normalizedRoot + "/", with: "")
+        return relative.isEmpty ? "." : relative.replacingOccurrences(of: "\\", with: "/")
     }
 
     func updateDraftModel(_ model: MGModelOption) {
@@ -1014,20 +1124,62 @@ final class MGAppModel {
             notificationsAuthorized = false
         }
     }
+
+    func addPickedPhoto(data: Data) {
+        pickedPhotos.insert(MGPickedPhoto(id: UUID().uuidString, data: data), at: 0)
+    }
+
+    func removePickedPhoto(_ id: String) {
+        pickedPhotos.removeAll { $0.id == id }
+    }
+
+    var mentionableFiles: [String] {
+        let liveFiles = workspaceNodesByRoot.values
+            .flatMap { $0 }
+            .filter { !$0.isDirectory }
+            .map(\.path)
+
+        let roots = remoteRoots.map(\.path)
+        return Array(Set(liveFiles + roots)).sorted()
+    }
+
+    func loadWorkspaceRoot(_ root: MGRemoteFileNode) async {
+        if workspaceLoadingRoots.contains(root.id) {
+            return
+        }
+
+        workspaceLoadingRoots.insert(root.id)
+        defer { workspaceLoadingRoots.remove(root.id) }
+
+        do {
+            workspaceNodesByRoot[root.id] = try await bridge.browseWorkspace(rootId: root.id, path: ".")
+            openedWorkspaceRootID = root.id
+        } catch {
+            liveActivityDiagnostics = "Workspace load failed: \(error.localizedDescription)"
+        }
+    }
+
+    func openWorkspaceFile(rootId: String, path: String) async {
+        do {
+            let file = try await bridge.readWorkspaceFile(rootId: rootId, path: path)
+            self.workspaceFileContents[file.path] = file.content
+            self.path.append(.codeViewer(fileRef: file.path))
+        } catch {
+            liveActivityDiagnostics = "File read failed: \(error.localizedDescription)"
+        }
+    }
 }
 
 enum MGFixtures {
     static let models: [MGModelOption] = [
-        MGModelOption(id: "auto", title: "Auto", subtitle: "Recommended for most tasks", isRecommended: true, availability: .live),
-        MGModelOption(id: "gpt-4o", title: "GPT-4o", subtitle: "Fast multimodal execution", isRecommended: false, availability: .partial),
-        MGModelOption(id: "gpt-4.1", title: "GPT-4.1", subtitle: "Balanced reasoning", isRecommended: false, availability: .partial),
-        MGModelOption(id: "gpt-5-codex", title: "GPT-5 Codex", subtitle: "Code-first reasoning", isRecommended: false, availability: .mock),
-        MGModelOption(id: "gpt-5-codex-high", title: "GPT-5 Codex High", subtitle: "Highest reasoning budget", isRecommended: false, availability: .mock)
+        MGModelOption(id: "flash", title: "Gemini Flash", subtitle: "Live Antigravity route", speedLabel: "Fast", effortLabel: "Balanced", isRecommended: true, availability: .live),
+        MGModelOption(id: "pro", title: "Gemini Pro", subtitle: "Live Antigravity route", speedLabel: "Deliberate", effortLabel: "High", isRecommended: false, availability: .live),
+        MGModelOption(id: "flash_lite", title: "Gemini Flash Lite", subtitle: "Live Antigravity route", speedLabel: "Ultra fast", effortLabel: "Low", isRecommended: false, availability: .live)
     ]
 
     static let pairingPayload = MGPairingQRCodePayload(
         sessionId: "mock-session-12345678",
-        address: "wss://192.168.1.18:59443",
+        address: "ws://192.168.1.18:59443",
         token: "MG-7K4Q-98N1",
         bridgeFingerprint: "3B:A7:E1:44:3F:92",
         expiresAt: .now.addingTimeInterval(300),

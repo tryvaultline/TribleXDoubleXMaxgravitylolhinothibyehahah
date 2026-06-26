@@ -52,12 +52,41 @@ enum Route: Hashable, Codable {
     }
 }
 
+enum MGAppSection: String, CaseIterable, Identifiable, Codable {
+    case spaces
+    case activity
+    case workspace
+    case settings
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .spaces: "Chats"
+        case .activity: "Activity"
+        case .workspace: "Workspace"
+        case .settings: "Settings"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .spaces: "bubble.left.and.bubble.right.fill"
+        case .activity: "bolt.horizontal.fill"
+        case .workspace: "folder.fill"
+        case .settings: "person.crop.circle.fill"
+        }
+    }
+}
+
 
 enum MGSheetDestination: Hashable, Identifiable {
     case connectionInfo
     case modelPicker
     case slashCommands
     case fileMentions
+    case photoLibrary
+    case plugins
     case taskContext
     case remoteFolderPicker
     case approvalSteering(requestID: String)
@@ -70,6 +99,8 @@ enum MGSheetDestination: Hashable, Identifiable {
         case .modelPicker: "modelPicker"
         case .slashCommands: "slashCommands"
         case .fileMentions: "fileMentions"
+        case .photoLibrary: "photoLibrary"
+        case .plugins: "plugins"
         case .taskContext: "taskContext"
         case .remoteFolderPicker: "remoteFolderPicker"
         case .approvalSteering(let requestID): "approvalSteering-\(requestID)"
@@ -89,13 +120,6 @@ enum MGFullScreenDestination: Hashable, Identifiable {
         case .plusMenu: "plusMenu"
         }
     }
-}
-
-enum MGPanelDestination: String, Hashable, Identifiable {
-    case activity
-    case settings
-
-    var id: String { rawValue }
 }
 
 enum MGPermissionMode: String, CaseIterable, Identifiable, Codable {
@@ -232,6 +256,8 @@ struct MGModelOption: Identifiable, Codable, Hashable {
     let id: String
     let title: String
     let subtitle: String?
+    let speedLabel: String?
+    let effortLabel: String?
     let isRecommended: Bool
     let availability: MGCapabilityState
 }
@@ -375,6 +401,25 @@ struct MGRemoteFileNode: Identifiable, Codable, Hashable {
     var optionalChildren: [MGRemoteFileNode]? {
         children.isEmpty ? nil : children
     }
+}
+
+struct MGRemoteFileContent: Codable, Hashable {
+    let path: String
+    let content: String
+}
+
+struct MGPluginInfo: Identifiable, Codable, Hashable {
+    let id: String
+    let name: String
+    let path: String
+    let kind: String?
+    let detail: String?
+    let command: String?
+}
+
+struct MGPickedPhoto: Identifiable, Hashable {
+    let id: String
+    let data: Data
 }
 
 struct MGNotificationPreferences: Codable, Hashable {

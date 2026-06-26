@@ -39,6 +39,10 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Maxgravity needs camera access to scan the desktop bridge pairing QR code.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Maxgravity needs photo library access so you can attach images to Antigravity tasks.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Maxgravity may save generated or imported task images when you explicitly choose to attach them.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Maxgravity needs local network access to connect to your computer's local bridge.</string>
 </dict>

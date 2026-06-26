@@ -1,5 +1,5 @@
 import { spawn, execSync } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, Dirent } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
@@ -13,9 +13,28 @@ export interface AntigravityAdapter {
   getCapabilities(): Promise<BridgeCapability[]>;
   diagnose(): Promise<any>;
   createConversation(spaceId: string, title: string, conversationId?: string): Promise<any>;
-  chat(conversationId: string, prompt: string, workspaceRoot: string, apiKey?: string): Promise<any>;
+  chat(conversationId: string, prompt: string, workspaceRoot: string, modelId?: string, apiKey?: string): Promise<any>;
   listConversations(spaceId?: string): Promise<any>;
   onEvent(callback: (event: any) => void): () => void;
+}
+
+interface LiveModelDescriptor {
+  id: string;
+  name: string;
+  description: string;
+  speed: string;
+  effort: string;
+  isRecommended: boolean;
+  state: string;
+}
+
+interface ToolDescriptor {
+  id: string;
+  name: string;
+  path: string;
+  kind: string;
+  detail: string;
+  command?: string;
 }
 
 export class UnsupportedCapabilityError extends Error {
@@ -33,11 +52,16 @@ interface LocalTask {
   status: string;
   createdAt: string;
   updatedAt: string;
+  prompt?: string;
+  workspaceRoot?: string;
+  lastError?: string;
 }
 
 export class AntigravityCliAccountAdapter implements AntigravityAdapter {
   private readonly agentApiBat = "C:\\Users\\kuroi\\.gemini\\antigravity\\bin\\agentapi.bat";
   private readonly realLogDir = "C:\\Users\\kuroi\\AppData\\Roaming\\Antigravity\\logs";
+  private readonly mcpConfigPath = "C:\\Users\\kuroi\\.gemini\\antigravity\\mcp_config.json";
+  private readonly extensionsDir = "C:\\Users\\kuroi\\.antigravity\\extensions";
   private readonly localDir = localDir;
   private readonly tasksFile = join(localDir, "tasks.json");
   private eventCallbacks: ((event: any) => void)[] = [];
@@ -97,6 +121,16 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
     }
   }
 
+  private updateTask(id: string, patch: Partial<LocalTask>) {
+    const tasks = this.loadTasks();
+    const task = tasks.find(t => t.id === id);
+    if (!task) {
+      return;
+    }
+    Object.assign(task, patch, { updatedAt: new Date().toISOString() });
+    this.saveTask(task);
+  }
+
   public discoverSession(): { token: string | null; address: string | null } {
     let token = process.env.ANTIGRAVITY_CSRF_TOKEN || null;
     let address = process.env.ANTIGRAVITY_LS_ADDRESS || null;
@@ -113,11 +147,19 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
         const lines = content.split("\n");
         for (let i = lines.length - 1; i >= 0; i--) {
           const line = lines[i];
+          if (!address && line.includes("Local:")) {
+            const match = line.match(/Local:\s+(https?:\/\/[^\s/]+(?::\d+)?)/);
+            if (match) {
+              address = match[1];
+            }
+          }
           if (line.includes("language_server.exe") && line.includes("--csrf_token")) {
             const match = line.match(/--csrf_token\s+([a-f0-9-]+)/);
             if (match) {
               token = match[1];
-              break;
+              if (address) {
+                break;
+              }
             }
           }
         }
@@ -126,27 +168,137 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
       }
     }
 
-    const lsLogPath = join(this.realLogDir, "language_server.log");
-    if (existsSync(lsLogPath)) {
-      try {
-        const content = readFileSync(lsLogPath, "utf8");
-        const lines = content.split("\n");
-        for (let i = lines.length - 1; i >= 0; i--) {
-          const line = lines[i];
-          if (line.includes("Language server listening on random port at") && line.includes("for HTTP")) {
-            const match = line.match(/Language server listening on random port at\s+(\d+)\s+for HTTP/);
-            if (match) {
-              address = `localhost:${match[1]}`;
-              break;
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Failed to read language_server.log for address:", err);
+    if (token) {
+      const liveAddress = this.discoverLiveAddress(token);
+      if (liveAddress) {
+        address = liveAddress;
       }
     }
 
     return { token, address };
+  }
+
+  private discoverLiveAddress(token: string): string | null {
+    const candidatePorts = this.discoverLanguageServerPorts();
+    for (const port of candidatePorts) {
+      for (const protocol of ["https", "http"]) {
+        const address = `${protocol}://127.0.0.1:${port}`;
+        try {
+          execSync(`"${this.agentApiBat}" get-conversation-metadata dummy-id`, {
+            env: {
+              ...process.env,
+              ANTIGRAVITY_LS_ADDRESS: address,
+              ANTIGRAVITY_CSRF_TOKEN: token
+            },
+            stdio: ["ignore", "pipe", "pipe"]
+          });
+        } catch (err: any) {
+          const output = `${err.stdout?.toString() ?? ""} ${err.stderr?.toString() ?? ""} ${err.message ?? ""}`;
+          if (output.includes("trajectory not found")) {
+            return address;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  private discoverLanguageServerPorts(): number[] {
+    try {
+      const raw = execSync(
+        `powershell -NoProfile -Command "Get-NetTCPConnection -State Listen | Where-Object { $_.OwningProcess -in (Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'language_server.exe' } | Select-Object -ExpandProperty ProcessId) } | Select-Object -ExpandProperty LocalPort"`,
+        { stdio: ["ignore", "pipe", "pipe"] }
+      ).toString();
+      return Array.from(
+        new Set(
+          raw
+            .split(/\r?\n/)
+            .map((line) => Number(line.trim()))
+            .filter((port) => Number.isFinite(port))
+        )
+      ).sort((a, b) => b - a);
+    } catch {
+      return [];
+    }
+  }
+
+  private parseSupportedModelTiers(session: { token: string; address: string }): string[] {
+    try {
+      execSync(`"${this.agentApiBat}" new-conversation --help`, {
+        env: {
+          ...process.env,
+          ANTIGRAVITY_LS_ADDRESS: session.address,
+          ANTIGRAVITY_CSRF_TOKEN: session.token
+        },
+        stdio: ["ignore", "pipe", "pipe"]
+      });
+      return ["flash"];
+    } catch (err: any) {
+      const output = `${err.stdout?.toString() ?? ""}\n${err.stderr?.toString() ?? ""}`;
+      const match = output.match(/Model tier to use\s+\(([^)]+)\)/i);
+      if (!match) {
+        return ["flash"];
+      }
+      return match[1]
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean);
+    }
+  }
+
+  private createModelDescriptor(tier: string, authenticated: boolean): LiveModelDescriptor {
+    switch (tier) {
+      case "flash_lite":
+        return {
+          id: "flash_lite",
+          name: "Gemini Flash Lite",
+          description: "Live Antigravity route discovered from the local CLI help output.",
+          speed: "Ultra fast",
+          effort: "Low",
+          isRecommended: false,
+          state: authenticated ? "live" : "unsupported"
+        };
+      case "pro":
+        return {
+          id: "pro",
+          name: "Gemini Pro",
+          description: "Live Antigravity route discovered from the local CLI help output.",
+          speed: "Deliberate",
+          effort: "High",
+          isRecommended: false,
+          state: authenticated ? "live" : "unsupported"
+        };
+      case "flash":
+      default:
+        return {
+          id: "flash",
+          name: "Gemini Flash",
+          description: "Live Antigravity route discovered from the local CLI help output.",
+          speed: "Fast",
+          effort: "Balanced",
+          isRecommended: true,
+          state: authenticated ? "live" : "unsupported"
+        };
+    }
+  }
+
+  private resolveCliModel(modelId?: string): string {
+    switch ((modelId ?? "").toLowerCase()) {
+      case "flash_lite":
+      case "gemini-flash-lite":
+        return "flash_lite";
+      case "pro":
+      case "gemini-pro":
+      case "gemini-3.1-pro-high":
+      case "gemini-3.1-pro-low":
+      case "claude-sonnet-4.6-thinking":
+      case "claude-opus-4.6-thinking":
+        return "pro";
+      case "flash":
+      case "gemini-3.5-flash":
+      default:
+        return "flash";
+    }
   }
 
   private async checkAuth(session: { token: string; address: string }): Promise<boolean> {
@@ -215,6 +367,88 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
     ];
   }
 
+  async availableModels(): Promise<LiveModelDescriptor[]> {
+    const isInstalled = existsSync(this.agentApiBat);
+    const session = this.discoverSession();
+    const authenticated = isInstalled && session.token && session.address
+      ? await this.checkAuth(session as { token: string; address: string })
+      : false;
+
+    if (!session.token || !session.address) {
+      return ["flash", "pro"].map((tier) => this.createModelDescriptor(tier, false));
+    }
+
+    const tiers = this.parseSupportedModelTiers(session as { token: string; address: string });
+    return tiers.map((tier) => this.createModelDescriptor(tier, authenticated));
+  }
+
+  async availableTools(): Promise<ToolDescriptor[]> {
+    const tools: ToolDescriptor[] = [
+      {
+        id: "agentapi.new-conversation",
+        name: "agentapi new-conversation",
+        path: this.agentApiBat,
+        kind: "command",
+        detail: "Create a brand new Antigravity task from the bridge.",
+        command: "agentapi new-conversation -model <tier> <prompt>"
+      },
+      {
+        id: "agentapi.send-message",
+        name: "agentapi send-message",
+        path: this.agentApiBat,
+        kind: "command",
+        detail: "Continue an existing Antigravity task from the bridge.",
+        command: "agentapi send-message <conversationId> <content>"
+      },
+      {
+        id: "agentapi.get-conversation-metadata",
+        name: "agentapi get-conversation-metadata",
+        path: this.agentApiBat,
+        kind: "command",
+        detail: "Validate the active Antigravity language server session.",
+        command: "agentapi get-conversation-metadata <conversationId>"
+      }
+    ];
+
+    if (existsSync(this.mcpConfigPath)) {
+      try {
+        const parsed = JSON.parse(readFileSync(this.mcpConfigPath, "utf8")) as {
+          mcpServers?: Record<string, { command?: string; args?: string[]; env?: Record<string, string>; type?: string }>;
+        };
+        for (const [id, server] of Object.entries(parsed.mcpServers ?? {})) {
+          tools.push({
+            id: `mcp.${id}`,
+            name: id,
+            path: this.mcpConfigPath,
+            kind: "mcp",
+            detail: server.type === "stdio" ? "Configured MCP stdio server." : "Configured MCP server.",
+            command: [server.command, ...(server.args ?? [])].filter(Boolean).join(" ")
+          });
+        }
+      } catch (err) {
+        console.error("Failed to parse Antigravity MCP config:", err);
+      }
+    }
+
+    if (existsSync(this.extensionsDir)) {
+      try {
+        for (const entry of readdirSyncSafe(this.extensionsDir)) {
+          tools.push({
+            id: `extension.${entry.name}`,
+            name: entry.name,
+            path: join(this.extensionsDir, entry.name),
+            kind: "extension",
+            detail: "Installed Antigravity extension discovered from the local profile."
+          });
+        }
+      } catch (err) {
+        console.error("Failed to read Antigravity extensions:", err);
+      }
+    }
+
+    return tools;
+  }
+
   async diagnose(): Promise<any> {
     const isInstalled = existsSync(this.agentApiBat);
     const session = this.discoverSession();
@@ -250,7 +484,7 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
     };
   }
 
-  async chat(conversationId: string, prompt: string, workspaceRoot: string, _apiKey?: string): Promise<any> {
+  async chat(conversationId: string, prompt: string, workspaceRoot: string, modelId?: string, _apiKey?: string): Promise<any> {
     // If we already have a real conversation ID mapped, treat this as a follow-up send-message
     if (this.localToRealMap.has(conversationId)) {
       const realId = this.localToRealMap.get(conversationId)!;
@@ -268,9 +502,14 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
         },
         shell: process.platform === "win32"
       });
+      let stderr = "";
+      child.stderr.on("data", (data) => {
+        stderr += data.toString();
+      });
       child.on("close", (code) => {
         if (code !== 0) {
           console.error(`agentapi send-message exited with code ${code}`);
+          this.emitStage(conversationId, "Task failed", compactError(stderr) || `Send-message exited with code ${code}.`);
         }
       });
       return { status: "sent" };
@@ -282,7 +521,8 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
       throw new Error("Antigravity session not found. Please ensure Antigravity is running.");
     }
 
-    const child = spawn(this.agentApiBat, ["new-conversation", prompt], {
+    const cliModel = this.resolveCliModel(modelId);
+    const child = spawn(this.agentApiBat, ["new-conversation", "-model", cliModel, prompt], {
       cwd: workspaceRoot,
       env: {
         ...process.env,
@@ -293,15 +533,26 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
     });
 
     let output = "";
+    let stderr = "";
     child.stdout.on("data", (data) => {
       output += data.toString();
+    });
+    child.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+    this.updateTask(conversationId, {
+      prompt,
+      workspaceRoot,
+      lastError: undefined
     });
 
     child.on("close", (code) => {
       if (code !== 0) {
         console.error(`agentapi new-conversation exited with code ${code}`);
         this.updateTaskStatus(conversationId, "Task failed");
-        this.emitStage(conversationId, "Task failed", "Execution command failed.");
+        const detail = compactError(stderr) || compactError(output) || `Execution command failed with exit code ${code}.`;
+        this.updateTask(conversationId, { lastError: detail });
+        this.emitStage(conversationId, "Task failed", detail);
         return;
       }
 
@@ -323,7 +574,9 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
       } catch (err) {
         console.error("Failed to parse new-conversation output:", output, err);
         this.updateTaskStatus(conversationId, "Task failed");
-        this.emitStage(conversationId, "Task failed", "Failed to parse session ID.");
+        const detail = compactError(stderr) || "Failed to parse Antigravity conversation ID.";
+        this.updateTask(conversationId, { lastError: detail });
+        this.emitStage(conversationId, "Task failed", detail);
       }
     });
 
@@ -430,4 +683,19 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
       this.pollInterval = null;
     }
   }
+}
+
+function compactError(raw: string): string {
+  const normalized = raw.replace(/\s+/g, " ").trim();
+  if (normalized.includes("project_id is required when providing project_env_config")) {
+    return "Antigravity rejected the task because the current workspace is missing a live project context. Open the project in Antigravity first, then retry from Maxgravity.";
+  }
+  if (normalized.includes("RESOURCE_EXHAUSTED")) {
+    return "Antigravity reported model quota exhaustion for the selected route. Retry later or switch to another live tier.";
+  }
+  return normalized.slice(0, 300);
+}
+
+function readdirSyncSafe(target: string): Dirent[] {
+  return readdirSync(target, { withFileTypes: true }).filter((entry) => entry.isDirectory());
 }

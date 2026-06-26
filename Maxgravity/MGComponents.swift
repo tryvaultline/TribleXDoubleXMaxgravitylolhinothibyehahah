@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import PhotosUI
 
 #if canImport(FloatingPanel)
 import FloatingPanel
@@ -24,6 +25,33 @@ struct MGBrandWordmark: View {
         Text("Maxgravity")
             .font(compact ? .headline.weight(.semibold) : .title3.weight(.bold))
             .foregroundStyle(MGTheme.primaryText)
+    }
+}
+
+struct MGGoogleAvatar: View {
+    var size: CGFloat = 34
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.24, green: 0.52, blue: 0.96),
+                            Color(red: 0.20, green: 0.80, blue: 0.54),
+                            Color(red: 0.98, green: 0.73, blue: 0.16),
+                            Color(red: 0.92, green: 0.29, blue: 0.25)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            Text("G")
+                .font(.system(size: size * 0.44, weight: .bold))
+                .foregroundStyle(.white)
+        }
+        .frame(width: size, height: size)
+        .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
     }
 }
 
@@ -288,10 +316,11 @@ struct MGPrimaryActionButton: View {
 
 struct MGComposerAccessoryBar: View {
     let selectedModel: String
+    let models: [MGModelOption]
     var onPlus: () -> Void
     var onSlash: () -> Void
     var onMention: () -> Void
-    var onModel: () -> Void
+    var onSelectModel: (MGModelOption) -> Void
     var onMicrophone: () -> Void
     var onSend: () -> Void
 
@@ -302,7 +331,21 @@ struct MGComposerAccessoryBar: View {
             iconButton(symbol: "@", action: onMention, label: "Mention file", usesText: true)
             Spacer(minLength: 10)
 
-            Button(action: onModel) {
+            Menu {
+                ForEach(models) { model in
+                    Button {
+                        onSelectModel(model)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Label(model.title, systemImage: model.isRecommended ? "checkmark.circle.fill" : "circle")
+                            if let speed = model.speedLabel, let effort = model.effortLabel {
+                                Text("Speed: \(speed) • Effort: \(effort)")
+                                    .font(.caption2)
+                            }
+                        }
+                    }
+                }
+            } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "sparkles.rectangle.stack.fill")
                     Text(selectedModel)
@@ -354,12 +397,15 @@ struct MGComposerAccessoryBar: View {
 struct MGComposer: View {
     @Binding var text: String
     let selectedModel: String
+    let modelOptions: [MGModelOption]
     let mentionedFiles: [String]
+    let pickedPhotos: [MGPickedPhoto]
     let onRemoveFile: (String) -> Void
+    let onRemovePhoto: (String) -> Void
     let onPlus: () -> Void
     let onSlash: () -> Void
     let onMention: () -> Void
-    let onModel: () -> Void
+    let onSelectModel: (MGModelOption) -> Void
     let onMicrophone: () -> Void
     let onSend: () -> Void
 
@@ -383,6 +429,30 @@ struct MGComposer: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 8)
                             .mgInteractiveGlass(cornerRadius: 16)
+                        }
+                    }
+                }
+            }
+
+            if !pickedPhotos.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(pickedPhotos) { photo in
+                            if let image = UIImage(data: photo.data) {
+                                ZStack(alignment: .topTrailing) {
+                                    Image(uiImage: image)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 72, height: 72)
+                                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                                    Button(action: { onRemovePhoto(photo.id) }) {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.body)
+                                            .foregroundStyle(.white)
+                                    }
+                                    .offset(x: 4, y: -4)
+                                }
+                            }
                         }
                     }
                 }
@@ -417,10 +487,11 @@ struct MGComposer: View {
 
             MGComposerAccessoryBar(
                 selectedModel: selectedModel,
+                models: modelOptions,
                 onPlus: onPlus,
                 onSlash: onSlash,
                 onMention: onMention,
-                onModel: onModel,
+                onSelectModel: onSelectModel,
                 onMicrophone: onMicrophone,
                 onSend: onSend
             )
@@ -797,6 +868,11 @@ struct MGModelPicker: View {
                                 Text(subtitle)
                                     .font(.caption)
                                     .foregroundStyle(MGTheme.secondaryText)
+                            }
+                            if let speed = model.speedLabel, let effort = model.effortLabel {
+                                Text("Speed: \(speed) • Effort: \(effort)")
+                                    .font(.caption2)
+                                    .foregroundStyle(MGTheme.tertiaryText)
                             }
                         }
                         Spacer()

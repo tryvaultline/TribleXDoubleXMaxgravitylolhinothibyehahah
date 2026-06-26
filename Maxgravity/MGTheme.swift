@@ -154,12 +154,34 @@ private struct MGInteractiveGlassModifier: ViewModifier {
             .fill(.ultraThinMaterial)
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(MGTheme.elevatedSurface.opacity(0.55))
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.10),
+                                MGTheme.elevatedSurface.opacity(0.72),
+                                Color.black.opacity(0.10)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+            .overlay(alignment: .top) {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.18), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(height: max(28, cornerRadius))
+                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             }
 #if canImport(LiquidGlassKit)
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(Color.white.opacity(0.04), lineWidth: 1)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
             }
 #endif
     }

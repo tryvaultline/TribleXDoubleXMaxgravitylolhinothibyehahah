@@ -1,4 +1,4 @@
-import { readdir, stat } from "node:fs/promises";
+import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { WorkspaceRoot } from "./schemas.js";
 
@@ -54,6 +54,17 @@ export class WorkspaceBrowser {
       }));
   }
 
+  async readTextFile(rootId: string, relativePath: string): Promise<{ path: string; content: string }> {
+    const target = this.resolve(rootId, relativePath);
+    const targetStat = await stat(target);
+    if (!targetStat.isFile()) {
+      throw new WorkspaceError("Requested path is not a file.", "NOT_DIRECTORY");
+    }
+
+    const content = await readFile(target, "utf8");
+    return { path: relativePath, content };
+  }
+
   async createFolder(rootId: string, relativePath: string, folderName: string): Promise<string> {
     const parent = this.resolve(rootId, relativePath);
     const target = path.join(parent, folderName);
@@ -64,6 +75,19 @@ export class WorkspaceBrowser {
       throw new WorkspaceError("Requested path escapes the approved workspace root.", "PATH_TRAVERSAL");
     }
     await import("node:fs/promises").then(fs => fs.mkdir(target, { recursive: true }));
+    return relative;
+  }
+
+  async writeBinaryFile(rootId: string, relativePath: string, fileName: string, content: Buffer): Promise<string> {
+    const parent = this.resolve(rootId, relativePath);
+    const target = path.join(parent, fileName);
+    const root = this.roots.find((candidate) => candidate.id === rootId)!;
+    const rootPath = path.resolve(root.path);
+    const relative = path.relative(rootPath, target);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+      throw new WorkspaceError("Requested path escapes the approved workspace root.", "PATH_TRAVERSAL");
+    }
+    await writeFile(target, content);
     return relative;
   }
 }

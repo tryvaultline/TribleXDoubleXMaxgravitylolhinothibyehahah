@@ -1574,64 +1574,6 @@ struct MGPairingCodeSheet: View {
                 }
             }
         }
-                } onError: { errMsg in
-                    self.state = .error(message: "Camera Error: \(errMsg)")
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 24))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24)
-                        .stroke(MGTheme.border, lineWidth: 1)
-                )
-                .frame(height: 320)
-                .padding(16)
-            }
-            
-            Spacer()
-        }
-    }
-    
-    private var manualEntryView: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("Enter Pairing Code Manually")
-                .font(.headline)
-                .foregroundStyle(MGTheme.primaryText)
-                .padding(.top, 16)
-            
-            Text("Enter the computer IP/address and the pairing code shown on your desktop screen.")
-                .font(.caption)
-                .foregroundStyle(MGTheme.secondaryText)
-            
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Computer IP Address")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(MGTheme.secondaryText)
-                
-                TextField("e.g. 192.168.1.18", text: $ipAddress)
-                    .keyboardType(.numbersAndPunctuation)
-                    .textInputAutocapitalization(.never)
-                    .padding(14)
-                    .mgReadableSurface(cornerRadius: 18)
-            }
-            
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Pairing Code")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(MGTheme.secondaryText)
-                
-                TextField("e.g. MG-7K4Q-98N1", text: $pairingToken)
-                    .textInputAutocapitalization(.characters)
-                    .padding(14)
-                    .mgReadableSurface(cornerRadius: 18)
-            }
-            
-            Spacer()
-            
-            MGPrimaryActionButton(title: "Connect", icon: "arrow.right.circle.fill") {
-                Task {
-                    await fetchManualSession()
-                }
-            }
-        }
         .padding(20)
     }
     

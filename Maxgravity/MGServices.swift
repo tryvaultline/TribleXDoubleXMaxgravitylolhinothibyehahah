@@ -678,6 +678,12 @@ final class MGAppModel {
     var presentedFullScreen: MGFullScreenDestination?
 
     var connection: MGComputerStatus?
+    var spaces: [MGSpaceSummary] = []
+    var activityBuckets: [MGActivityBucket] = []
+    var schedules: [MGScheduledTask] = []
+    var models: [MGModelOption] = []
+    var remoteRoots: [MGRemoteFileNode] = []
+    var capabilities: [MGBridgeCapability] = []
     #if DEBUG
     var trustedDevices: [MGTrustedDevice] = MGFixtures.trustedDevices
     var pairingPayload: MGPairingQRCodePayload = MGFixtures.pairingPayload
@@ -1031,6 +1037,61 @@ final class MGAppModel {
     }
 
     func addMentionedFile(_ path: String) {
+        guard !draftContext.mentionedFiles.contains(path) else { return }
+        draftContext.mentionedFiles.append(path)
+    }
+
+    func removeMentionedFile(_ path: String) {
+        draftContext.mentionedFiles.removeAll { $0 == path }
+    }
+
+    func steerApproval(requestID: String, guidance: String) {
+        guard !guidance.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
+        for spaceIndex in spaces.indices {
+            for chatIndex in spaces[spaceIndex].chats.indices where spaces[spaceIndex].chats[chatIndex].thread.approval?.id == requestID {
+                let chatId = spaces[spaceIndex].chats[chatIndex].id
+                let message = MGThreadMessage(
+                    id: UUID().uuidString,
+                    role: .user,
+                    body: guidance,
+                    timestamp: .now,
+                    delivered: true,
+                    attachments: []
+                )
+                spaces[spaceIndex].chats[chatIndex].thread.messages.append(message)
+                spaces[spaceIndex].chats[chatIndex].thread.approval = nil
+                spaces[spaceIndex].chats[chatIndex].lastActivity = Date()
+                
+                Task {
+                    try? await bridge.sendMessage(taskId: chatId, prompt: guidance, workspaceRoot: draftContext.workingFolder)
+                }
+                return
+            }
+        }
+    }
+
+    func startTaskEventStreaming(taskId: String) {
+        webSocketTask?.cancel(with: .goingAway, reason: nil)
+        
+        guard let s = MGKeychainHelper.load() else { return }
+        let wsAddress = s.address
+            .replacingOccurrences(of: "https://", with: "wss://")
+            .replacingOccurrences(of: "http://", with: "ws://")
+        
+        guard let url = URL(string: "\(wsAddress)/v1/tasks/\(taskId)/events") else { return }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(s.deviceSecret)", forHTTPHeaderField: "Authorization")
+        request.setValue(s.deviceId, forHTTPHeaderField: "x-mg-device-id")
+        
+        let delegate = MGTrustPinningDelegate(expectedFingerprint: s.bridgeFingerprint)
+        let urlSession = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+        let wsTask = urlSession.webSocketTask(with: request)
+        self.webSocketTask = wsTask
+        wsTask.resume()
+        
+        listenForWsEvents(wsTask, taskId: taskId)
     }
 
     func stopTaskEventStreaming() {

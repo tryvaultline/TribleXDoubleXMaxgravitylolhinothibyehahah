@@ -191,6 +191,7 @@ export class PairingManager {
       name: pending.deviceName,
       publicKeyFingerprint: pending.publicKeyFingerprint,
       pairedAt: now.toISOString(),
+      role: "Owner",
       secretHash: sha256(deviceSecret)
     };
 
@@ -201,6 +202,7 @@ export class PairingManager {
       name: device.name,
       publicKeyFingerprint: device.publicKeyFingerprint,
       pairedAt: device.pairedAt,
+      role: device.role,
       revokedAt: device.revokedAt
     };
 
@@ -242,7 +244,7 @@ export class PairingManager {
     if (!safeEqualHash(deviceSecret, device.secretHash)) {
       throw new PairingError("Device secret is invalid.", "DEVICE_SECRET_INVALID");
     }
-    return device;
+    return { ...device, role: device.role ?? "Owner" };
   }
 
   private now(): Date {

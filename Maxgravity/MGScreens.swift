@@ -172,7 +172,7 @@ struct MGFirstLaunchView: View {
                     }
                 }
                 .padding(16)
-                .mgReadableSurface(cornerRadius: 28)
+                .mgInteractiveGlass(cornerRadius: 28)
             }
 
             Spacer()
@@ -437,7 +437,7 @@ struct MGNewTaskView: View {
             }
         }
         .padding(16)
-        .mgReadableSurface(cornerRadius: 26)
+        .mgInteractiveGlass(cornerRadius: 26)
     }
 
     private var spaceTitle: String {
@@ -538,7 +538,7 @@ struct MGChatThreadView: View {
                     }
                 }
                 .padding(16)
-                .mgReadableSurface(cornerRadius: 24)
+                .mgInteractiveGlass(cornerRadius: 24)
                 .frame(maxWidth: 320, alignment: .trailing)
             }
         } else {
@@ -624,7 +624,7 @@ struct MGTaskDetailView: View {
                                     .frame(minHeight: 44)
                                 }
                                 .buttonStyle(MGPressableButtonStyle())
-                                .mgReadableSurface(cornerRadius: 18)
+                                .mgInteractiveGlass(cornerRadius: 18)
                             }
                         }
                     case .changes:
@@ -657,7 +657,7 @@ struct MGTaskDetailView: View {
                                         .textSelection(.enabled)
                                 }
                                 .padding(14)
-                                .mgReadableSurface(cornerRadius: 20)
+                                .mgInteractiveGlass(cornerRadius: 20)
                             }
                         }
                     }
@@ -683,7 +683,7 @@ struct MGCodeViewerScreen: View {
                 .foregroundStyle(MGTheme.primaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(18)
-                .mgReadableSurface(cornerRadius: 26)
+                .mgInteractiveGlass(cornerRadius: 26)
                 .padding(20)
         }
         .background(MGAppBackground())
@@ -707,7 +707,7 @@ struct MGDiffViewerScreen: View {
                 diffLine("~    .frame(minHeight: 44)", color: MGTheme.warning)
             }
             .padding(18)
-            .mgReadableSurface(cornerRadius: 26)
+            .mgInteractiveGlass(cornerRadius: 26)
             .padding(20)
         }
         .background(MGAppBackground())
@@ -1345,7 +1345,7 @@ struct MGApprovalSteeringSheet: View {
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 180)
                     .padding(12)
-                    .mgReadableSurface(cornerRadius: 20)
+                    .mgInteractiveGlass(cornerRadius: 20)
                 MGPrimaryActionButton(title: "Send steering") {
                     appModel.steerApproval(requestID: requestID, guidance: guidance)
                     dismiss()

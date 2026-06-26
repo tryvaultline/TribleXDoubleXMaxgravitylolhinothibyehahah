@@ -169,7 +169,7 @@ class ScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDel
             device.torchMode = torchEnabled ? .on : .off
             device.unlockForConfiguration()
         } catch {
-            print("Failed to toggle flashlight: \(error.localizedDescription)")
+            torchEnabled = false
         }
     }
 

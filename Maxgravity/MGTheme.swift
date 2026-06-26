@@ -3,6 +3,28 @@ import UIKit
 
 #if canImport(LiquidGlassKit)
 import LiquidGlassKit
+
+struct MGLiquidGlassRepresentable: UIViewRepresentable {
+    func makeUIView(context: Context) -> LiquidGlassView {
+        let view = LiquidGlassView()
+        return view
+    }
+    
+    func updateUIView(_ uiView: LiquidGlassView, context: Context) {}
+}
+
+struct MGLiquidLensRepresentable: UIViewRepresentable {
+    var isLifted: Bool
+    
+    func makeUIView(context: Context) -> LiquidLensView {
+        let view = LiquidLensView()
+        return view
+    }
+    
+    func updateUIView(_ uiView: LiquidLensView, context: Context) {
+        uiView.isLifted = isLifted
+    }
+}
 #endif
 
 enum MGTheme {
@@ -150,6 +172,36 @@ private struct MGInteractiveGlassModifier: ViewModifier {
 
     @ViewBuilder
     private var glassBackground: some View {
+        #if canImport(LiquidGlassKit)
+        MGLiquidGlassRepresentable()
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.08),
+                                MGTheme.elevatedSurface.opacity(0.68),
+                                Color.black.opacity(0.08)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+            .overlay(alignment: .top) {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.14), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(height: max(28, cornerRadius))
+                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            }
+        #else
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .fill(.ultraThinMaterial)
             .overlay {
@@ -178,12 +230,7 @@ private struct MGInteractiveGlassModifier: ViewModifier {
                     .frame(height: max(28, cornerRadius))
                     .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             }
-#if canImport(LiquidGlassKit)
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
-            }
-#endif
+        #endif
     }
 }
 
@@ -194,9 +241,9 @@ struct MGPressableButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(foreground)
-            .scaleEffect(configuration.isPressed ? 0.975 : 1)
-            .opacity(configuration.isPressed ? 0.92 : 1)
-            .animation(.spring(response: 0.24, dampingFraction: 0.78), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .opacity(configuration.isPressed ? 0.90 : 1)
+            .animation(.spring(response: 0.28, dampingFraction: 0.55), value: configuration.isPressed)
     }
 }
 
@@ -223,10 +270,10 @@ struct MGPrimaryButtonStyle: ButtonStyle {
                             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     }
             )
-            .shadow(color: Color.black.opacity(configuration.isPressed ? 0.10 : 0.18), radius: configuration.isPressed ? 6 : 12, y: configuration.isPressed ? 4 : 8)
-            .scaleEffect(configuration.isPressed ? 0.972 : 1)
-            .opacity(configuration.isPressed ? 0.96 : 1)
-            .animation(.spring(response: 0.26, dampingFraction: 0.78), value: configuration.isPressed)
+            .shadow(color: Color.black.opacity(configuration.isPressed ? 0.06 : 0.18), radius: configuration.isPressed ? 5 : 12, y: configuration.isPressed ? 3 : 8)
+            .scaleEffect(configuration.isPressed ? 0.945 : 1)
+            .opacity(configuration.isPressed ? 0.95 : 1)
+            .animation(.spring(response: 0.30, dampingFraction: 0.58), value: configuration.isPressed)
     }
 }
 
@@ -237,9 +284,9 @@ struct MGSecondaryIconButtonStyle: ButtonStyle {
             .frame(minWidth: 44, minHeight: 44)
             .padding(2)
             .mgInteractiveGlass(cornerRadius: 18)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .opacity(configuration.isPressed ? 0.92 : 1)
-            .animation(.spring(response: 0.22, dampingFraction: 0.78), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.93 : 1)
+            .opacity(configuration.isPressed ? 0.90 : 1)
+            .animation(.spring(response: 0.26, dampingFraction: 0.52), value: configuration.isPressed)
     }
 }
 

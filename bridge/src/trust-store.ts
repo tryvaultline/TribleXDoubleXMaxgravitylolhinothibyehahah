@@ -14,11 +14,12 @@ export class MemoryTrustStore implements TrustStore {
   private readonly devices = new Map<string, TrustedDevice>();
 
   async list(): Promise<TrustedDevice[]> {
-    return [...this.devices.values()];
+    return [...this.devices.values()].map(normalizeDevice);
   }
 
   async find(deviceId: string): Promise<TrustedDevice | undefined> {
-    return this.devices.get(deviceId);
+    const device = this.devices.get(deviceId);
+    return device ? normalizeDevice(device) : undefined;
   }
 
   async save(device: TrustedDevice): Promise<void> {
@@ -50,10 +51,10 @@ export class FileTrustStore implements TrustStore {
         const devices = JSON.parse(trimmed) as TrustedDevice[];
         // Migrate to encrypted format
         await this.write(devices);
-        return devices;
+        return devices.map(normalizeDevice);
       }
       const decrypted = unprotectForCurrentUser(trimmed);
-      return JSON.parse(decrypted) as TrustedDevice[];
+      return (JSON.parse(decrypted) as TrustedDevice[]).map(normalizeDevice);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         return [];
@@ -92,4 +93,8 @@ export class FileTrustStore implements TrustStore {
     const encrypted = protectForCurrentUser(plainText);
     await writeFile(this.filePath, encrypted, { encoding: "utf8", mode: 0o600 });
   }
+}
+
+function normalizeDevice(device: TrustedDevice): TrustedDevice {
+  return { ...device, role: device.role ?? "Owner" };
 }

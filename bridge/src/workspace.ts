@@ -3,7 +3,7 @@ import path from "node:path";
 import { WorkspaceRoot } from "./schemas.js";
 
 export class WorkspaceError extends Error {
-  constructor(message: string, readonly code: "ROOT_NOT_FOUND" | "PATH_TRAVERSAL" | "NOT_DIRECTORY") {
+  constructor(message: string, readonly code: "ROOT_NOT_FOUND" | "PATH_TRAVERSAL" | "NOT_DIRECTORY" | "INVALID_NAME" | "FILE_TOO_LARGE") {
     super(message);
   }
 }
@@ -66,6 +66,7 @@ export class WorkspaceBrowser {
   }
 
   async createFolder(rootId: string, relativePath: string, folderName: string): Promise<string> {
+    assertSafeLeafName(folderName);
     const parent = this.resolve(rootId, relativePath);
     const target = path.join(parent, folderName);
     const root = this.roots.find((candidate) => candidate.id === rootId)!;
@@ -79,6 +80,10 @@ export class WorkspaceBrowser {
   }
 
   async writeBinaryFile(rootId: string, relativePath: string, fileName: string, content: Buffer): Promise<string> {
+    assertSafeLeafName(fileName);
+    if (content.byteLength > 10 * 1024 * 1024) {
+      throw new WorkspaceError("File is too large for a mobile workspace import.", "FILE_TOO_LARGE");
+    }
     const parent = this.resolve(rootId, relativePath);
     const target = path.join(parent, fileName);
     const root = this.roots.find((candidate) => candidate.id === rootId)!;
@@ -89,5 +94,12 @@ export class WorkspaceBrowser {
     }
     await writeFile(target, content);
     return relative;
+  }
+}
+
+function assertSafeLeafName(value: string): void {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "." || trimmed === ".." || /[\\/:*?"<>|\u0000-\u001F]/.test(trimmed)) {
+    throw new WorkspaceError("File or folder name is invalid.", "INVALID_NAME");
   }
 }

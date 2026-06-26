@@ -6,5 +6,38 @@
     "status": "Task failed",
     "createdAt": "2026-06-25T18:05:37.308Z",
     "updatedAt": "2026-06-25T18:05:37.583Z"
+  },
+  {
+    "id": "ba45f72c-d48b-4df4-88f1-3efbc5defc21",
+    "spaceId": "maxgravity-project",
+    "title": "سوي ملف واكتب فيه زوط",
+    "status": "Task completed",
+    "createdAt": "2026-06-26T06:01:23.700Z",
+    "updatedAt": "2026-06-26T06:01:27.413Z",
+    "prompt": "سوي ملف واكتب فيه زوط",
+    "workspaceRoot": "C:\\Users\\kuroi\\OneDrive\\Desktop\\Maxgravity\\bridge",
+    "realId": "7436ba10-1d99-4b10-a3f4-09d2b59153f4"
+  },
+  {
+    "id": "fdb3fdb7-7760-45c4-9b62-2c191c22a80e",
+    "spaceId": "maxgravity-project",
+    "title": "مرحبا",
+    "status": "Task completed",
+    "createdAt": "2026-06-26T06:05:23.149Z",
+    "updatedAt": "2026-06-26T06:05:25.240Z",
+    "prompt": "مرحبا",
+    "workspaceRoot": "C:\\Users\\kuroi\\OneDrive\\Desktop\\Maxgravity\\bridge",
+    "realId": "932fc208-aa2b-4361-8811-f48770f2d087"
+  },
+  {
+    "id": "41475ca8-83d5-4b5e-a719-db8a19920247",
+    "spaceId": "maxgravity-project",
+    "title": "وش الموديل هذا ومين مطورك ووش البرنامج الي انا اكتبلك منه ويوصلك كلامي منه كذالك اشرح الصوره المرفقة",
+    "status": "Task completed",
+    "createdAt": "2026-06-26T06:12:00.207Z",
+    "updatedAt": "2026-06-26T06:12:02.246Z",
+    "prompt": "وش الموديل هذا ومين مطورك ووش البرنامج الي انا اكتبلك منه ويوصلك كلامي منه كذالك اشرح الصوره المرفقة\n\n\nAttached images saved into the workspace:\n- maxgravity-imports\\ios-photo-1782454319-1.jpg",
+    "workspaceRoot": "C:\\Users\\kuroi\\OneDrive\\Desktop\\Maxgravity\\bridge",
+    "realId": "074d5c54-f22e-41b5-98d7-e5e0cb3194bd"
   }
 ]

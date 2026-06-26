@@ -260,10 +260,21 @@ struct MGModelOption: Identifiable, Codable, Hashable {
     let id: String
     let title: String
     let subtitle: String?
+    let providerID: String
+    let providerName: String
+    let modelID: String
+    let modelName: String
+    let runtimeID: String
+    let runtimeName: String
     let speedLabel: String?
     let effortLabel: String?
+    let capabilities: [String]
     let isRecommended: Bool
     let availability: MGCapabilityState
+
+    var contractSummary: String {
+        "\(providerName) / \(modelName) / \(runtimeName)"
+    }
 }
 
 struct MGTaskContext: Codable, Hashable {

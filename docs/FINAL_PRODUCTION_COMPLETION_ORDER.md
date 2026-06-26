@@ -2,7 +2,7 @@
 
 You are now the final implementation owner for Maxgravity.
 
-Do not treat this as a prototype iteration, design exploration, or partial task. Convert the existing project into a clean, production-ready local companion app for Google Antigravity.
+Do not treat this as a prototype iteration, design exploration, or partial task. Convert the existing project into a clean, production-ready local companion app for Antigravity.
 
 Work autonomously until all independent work is complete.
 

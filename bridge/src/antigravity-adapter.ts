@@ -3,7 +3,8 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, Dirent
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
-import { BridgeCapability } from "./schemas.js";
+import { BridgeCapability, ModelDescriptor } from "./schemas.js";
+import { redactSensitive } from "./redaction.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(here, "..", "..");
@@ -13,20 +14,12 @@ export interface AntigravityAdapter {
   getCapabilities(): Promise<BridgeCapability[]>;
   diagnose(): Promise<any>;
   createConversation(spaceId: string, title: string, conversationId?: string): Promise<any>;
-  chat(conversationId: string, prompt: string, workspaceRoot: string, modelId?: string, apiKey?: string): Promise<any>;
+  chat(conversationId: string, prompt: string, workspaceRoot: string, modelId?: string): Promise<any>;
   listConversations(spaceId?: string): Promise<any>;
   onEvent(callback: (event: any) => void): () => void;
 }
 
-interface LiveModelDescriptor {
-  id: string;
-  name: string;
-  description: string;
-  speed: string;
-  effort: string;
-  isRecommended: boolean;
-  state: string;
-}
+type LiveModelDescriptor = ModelDescriptor;
 
 interface ToolDescriptor {
   id: string;
@@ -168,7 +161,7 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
           }
         }
       } catch (err) {
-        console.error("Failed to read main.log for token:", err);
+        logDiagnostic("Failed to read Antigravity main log.", err);
       }
     }
 
@@ -251,55 +244,79 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
   }
 
   private createModelDescriptor(tier: string, authenticated: boolean): LiveModelDescriptor {
+    const state: LiveModelDescriptor["state"] = authenticated ? "live" : "unsupported";
+    const runtimeStatus: LiveModelDescriptor["agentRuntime"]["status"] = authenticated ? "Live" : "Unsupported";
+    const base = {
+      provider: {
+        id: "antigravity",
+        name: "Antigravity"
+      },
+      agentRuntime: {
+        id: "antigravity-agent-cli",
+        name: "Antigravity Agent CLI",
+        status: runtimeStatus
+      },
+      capabilities: ["Chat", "Workspace context", "Task execution"] as string[],
+      state
+    };
+
     switch (tier) {
       case "flash_lite":
         return {
-          id: "flash_lite",
-          name: "Gemini Flash Lite",
-          description: "Live Antigravity route discovered from the local CLI help output.",
+          ...base,
+          id: "antigravity-lite",
+          name: "Antigravity Lite",
+          description: "Provider: Antigravity. Model: Lite. Runtime: Antigravity Agent CLI.",
+          model: {
+            id: "flash_lite",
+            name: "Lite"
+          },
           speed: "Ultra fast",
           effort: "Low",
-          isRecommended: false,
-          state: authenticated ? "live" : "unsupported"
+          isRecommended: false
         };
       case "pro":
         return {
-          id: "pro",
-          name: "Gemini Pro",
-          description: "Live Antigravity route discovered from the local CLI help output.",
+          ...base,
+          id: "antigravity-pro",
+          name: "Antigravity Pro",
+          description: "Provider: Antigravity. Model: Pro. Runtime: Antigravity Agent CLI.",
+          model: {
+            id: "pro",
+            name: "Pro"
+          },
           speed: "Deliberate",
           effort: "High",
-          isRecommended: false,
-          state: authenticated ? "live" : "unsupported"
+          isRecommended: false
         };
       case "flash":
       default:
         return {
-          id: "flash",
-          name: "Gemini Flash",
-          description: "Live Antigravity route discovered from the local CLI help output.",
+          ...base,
+          id: "antigravity-fast",
+          name: "Antigravity Fast",
+          description: "Provider: Antigravity. Model: Fast. Runtime: Antigravity Agent CLI.",
+          model: {
+            id: "flash",
+            name: "Fast"
+          },
           speed: "Fast",
           effort: "Balanced",
-          isRecommended: true,
-          state: authenticated ? "live" : "unsupported"
+          isRecommended: true
         };
     }
   }
 
   private resolveCliModel(modelId?: string): string {
     switch ((modelId ?? "").toLowerCase()) {
+      case "antigravity-lite":
       case "flash_lite":
-      case "gemini-flash-lite":
         return "flash_lite";
+      case "antigravity-pro":
       case "pro":
-      case "gemini-pro":
-      case "gemini-3.1-pro-high":
-      case "gemini-3.1-pro-low":
-      case "claude-sonnet-4.6-thinking":
-      case "claude-opus-4.6-thinking":
         return "pro";
+      case "antigravity-fast":
       case "flash":
-      case "gemini-3.5-flash":
       default:
         return "flash";
     }
@@ -430,7 +447,7 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
           });
         }
       } catch (err) {
-        console.error("Failed to parse Antigravity MCP config:", err);
+          logDiagnostic("Failed to parse Antigravity MCP config.", err);
       }
     }
 
@@ -446,7 +463,7 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
           });
         }
       } catch (err) {
-        console.error("Failed to read Antigravity extensions:", err);
+        logDiagnostic("Failed to read Antigravity extensions.", err);
       }
     }
 
@@ -488,7 +505,7 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
     };
   }
 
-  async chat(conversationId: string, prompt: string, workspaceRoot: string, modelId?: string, _apiKey?: string): Promise<any> {
+  async chat(conversationId: string, prompt: string, workspaceRoot: string, modelId?: string): Promise<any> {
     // If we already have a real conversation ID mapped, treat this as a follow-up send-message
     if (this.localToRealMap.has(conversationId)) {
       const realId = this.localToRealMap.get(conversationId)!;
@@ -516,7 +533,7 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
       });
       child.on("close", (code) => {
         if (code !== 0) {
-          console.error(`agentapi send-message exited with code ${code}`);
+          logDiagnostic("Antigravity send-message failed.", { code });
           const detail = compactError(stderr) || `Send-message exited with code ${code}.`;
           this.updateTaskStatus(conversationId, "Task failed");
           this.updateTask(conversationId, { lastError: detail });
@@ -568,7 +585,7 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
 
     child.on("close", (code) => {
       if (code !== 0) {
-        console.error(`agentapi new-conversation exited with code ${code}`);
+        logDiagnostic("Antigravity new-conversation failed.", { code });
         this.updateTaskStatus(conversationId, "Task failed");
         const detail = compactError(stderr) || compactError(output) || `Execution command failed with exit code ${code}.`;
         this.updateTask(conversationId, { lastError: detail });
@@ -580,7 +597,7 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
         const payload = JSON.parse(output.trim());
         const realId = payload.response?.newConversation?.conversationId;
         if (realId) {
-          console.log(`Mapped local conversation ${conversationId} to real conversation ${realId}`);
+          logDiagnostic("Mapped local conversation to Antigravity conversation.", { conversationId, realId });
           this.localToRealMap.set(conversationId, realId);
           this.realToLocalMap.set(realId, conversationId);
 
@@ -598,7 +615,7 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
           }
         }
       } catch (err) {
-        console.error("Failed to parse new-conversation output:", output, err);
+        logDiagnostic("Failed to parse Antigravity new-conversation output.", err);
         this.updateTaskStatus(conversationId, "Task failed");
         const detail = compactError(stderr) || "Failed to parse Antigravity conversation ID.";
         this.updateTask(conversationId, { lastError: detail });
@@ -695,12 +712,12 @@ export class AntigravityCliAccountAdapter implements AntigravityAdapter {
           }
 
           if (task.status !== stage) {
-            console.log(`Task ${task.id} (${task.title}) stage transition: ${task.status} -> ${stage}`);
+            logDiagnostic("Antigravity task stage transition.", { taskId: task.id, from: task.status, to: stage });
             this.updateTaskStatus(task.id, stage);
             this.emitStage(task.id, stage, detail);
           }
         } catch (err) {
-          console.error(`Failed to poll logs for task ${task.id}:`, err);
+          logDiagnostic("Failed to poll Antigravity transcript logs.", { taskId: task.id, error: err });
         }
       }
     }, 1500);
@@ -722,9 +739,20 @@ function compactError(raw: string): string {
   if (normalized.includes("RESOURCE_EXHAUSTED")) {
     return "Antigravity reported model quota exhaustion for the selected route. Retry later or switch to another live tier.";
   }
-  return normalized.slice(0, 300);
+  return String(redactSensitive(normalized)).slice(0, 300);
 }
 
 function readdirSyncSafe(target: string): Dirent[] {
   return readdirSync(target, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+}
+
+function logDiagnostic(message: string, detail?: unknown): void {
+  if (process.env.NODE_ENV === "test") {
+    return;
+  }
+  if (detail === undefined) {
+    console.warn(`[Maxgravity Bridge] ${message}`);
+    return;
+  }
+  console.warn(`[Maxgravity Bridge] ${message}`, redactSensitive(detail));
 }

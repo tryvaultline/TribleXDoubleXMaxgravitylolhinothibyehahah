@@ -6,7 +6,7 @@ This workspace contains:
 
 - A native iPhone-only SwiftUI app targeting iOS 17+
 - A local TypeScript Maxgravity Bridge scaffold for Windows
-- QR pairing, trusted-device, workspace confinement, and bridge event schemas
+- QR pairing, trusted-device roles, workspace confinement, model contracts, and bridge event schemas
 - CI for iOS builds, bridge checks, security audit, and static policy checks
 
 ## Structure
@@ -20,11 +20,12 @@ This workspace contains:
 ## Current implementation status
 
 - Implemented:
-  - Two-main-screen iOS shell: Spaces and Chat
+  - Three-tab iOS shell: Spaces, Activity, and Settings
   - Contextual New Task flow and attachment menu
   - Activity and Settings panel presentation state
   - Real Maxgravity brand assets and app icons
-  - Bridge pairing token expiry, replay rejection, trusted-device auth, revocation, workspace root confinement, schema validation, redaction, and tests
+  - Bridge pairing token expiry, replay rejection, trusted-device auth, role guards, revocation, workspace root confinement, schema validation, redaction, idempotent task creation, and tests
+  - Antigravity model payloads with separate Provider, Model, and Agent Runtime fields
   - CI artifact packaging for unsigned iOS builds
 - Partial:
   - FloatingPanel-backed Activity and Settings panels

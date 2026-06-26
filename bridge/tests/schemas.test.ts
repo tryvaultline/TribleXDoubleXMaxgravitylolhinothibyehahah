@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BridgeEventSchema } from "../src/schemas.js";
-import { redactSensitive } from "../src/redaction.js";
+import { redactSensitive, redactSensitiveText } from "../src/redaction.js";
 
 describe("bridge event schemas", () => {
   it("accepts safe task stage events", () => {
@@ -48,5 +48,11 @@ describe("redaction", () => {
         safe: "visible"
       }
     });
+  });
+
+  it("redacts sensitive values embedded inside diagnostic text", () => {
+    expect(redactSensitiveText("Authorization: Bearer abc.def.ghi")).toContain("Bearer [REDACTED]");
+    expect(redactSensitiveText("--csrf_token 12345abcdef")).toContain("--csrf_token [REDACTED]");
+    expect(redactSensitiveText("device_secret=super-secret-value")).toContain("device_secret=[REDACTED]");
   });
 });

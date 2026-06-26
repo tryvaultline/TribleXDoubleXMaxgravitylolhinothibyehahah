@@ -4,13 +4,27 @@ import Fastify, { FastifyInstance } from "fastify";
 import { WebSocket } from "ws";
 import { fingerprint } from "./crypto.js";
 import { PairingError, PairingManager } from "./pairing.js";
-import { TrustDeviceRequestSchema, WorkspaceRoot } from "./schemas.js";
+import {
+  CreateTaskRequestSchema,
+  ModelDescriptorSchema,
+  SendTaskMessageRequestSchema,
+  TaskIdParamsSchema,
+  TrustDeviceRequestSchema,
+  WorkspaceBrowseQuerySchema,
+  WorkspaceCreateFolderRequestSchema,
+  WorkspaceFileQuerySchema,
+  WorkspaceImportImageRequestSchema,
+  WorkspaceRoot
+} from "./schemas.js";
 import { MemoryTrustStore, TrustStore } from "./trust-store.js";
 import { redactSensitive } from "./redaction.js";
 import { WorkspaceBrowser, WorkspaceError } from "./workspace.js";
 import { AntigravityAdapter, AntigravityCliAccountAdapter, UnsupportedCapabilityError } from "./antigravity-adapter.js";
+import { BridgeAction, PermissionError, publicPermissionMatrix, requirePermission } from "./permissions.js";
 import { readdir } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { z, ZodSchema } from "zod";
 
 interface BuildServerOptions {
   trustStore?: TrustStore;
@@ -28,6 +42,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   const trustStore = options.trustStore ?? new MemoryTrustStore();
   const adapter = options.adapter ?? new AntigravityCliAccountAdapter();
   const browser = new WorkspaceBrowser(options.workspaceRoots ?? []);
+  const idempotency = new Map<string, Promise<unknown>>();
   
   // Share pairing manager if passed (crucial for local/LAN server split), otherwise create new
   const pairing = options.pairingManager ?? new PairingManager(trustStore, {
@@ -39,6 +54,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
 
   const app = Fastify({
     https: options.https,
+    bodyLimit: 15 * 1024 * 1024, // Allow up to 15MB for base64 image uploads from mobile
     logger: {
       redact: ["req.headers.authorization", "token", "deviceSecret", "*.token", "*.secret"]
     }
@@ -134,11 +150,17 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   });
 
   // Local pairing approval routes
-  app.get("/v1/connection/pending-devices", async () => {
+  app.get("/v1/connection/pending-devices", async (request, reply) => {
+    if (!requireLocalRequest(request, reply)) {
+      return;
+    }
     return pairing.listPendingDevices();
   });
 
   app.post<{ Params: { id: string } }>("/v1/connection/pending-devices/:id/approve", async (request, reply) => {
+    if (!requireLocalRequest(request, reply)) {
+      return;
+    }
     try {
       const result = await pairing.approvePendingDevice(request.params.id);
       return { status: "approved", device: result.device };
@@ -147,7 +169,10 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     }
   });
 
-  app.post<{ Params: { id: string } }>("/v1/connection/pending-devices/:id/reject", async (request, _reply) => {
+  app.post<{ Params: { id: string } }>("/v1/connection/pending-devices/:id/reject", async (request, reply) => {
+    if (!requireLocalRequest(request, reply)) {
+      return;
+    }
     pairing.rejectPendingDevice(request.params.id);
     return { status: "rejected" };
   });
@@ -174,7 +199,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   });
 
   app.get("/v1/connection/trusted-devices", async (request, reply) => {
-    const auth = await authenticateRequest(pairing, request, reply);
+    const auth = await authenticateRequest(pairing, request, reply, "devices.read");
     if (!auth) {
       return;
     }
@@ -183,7 +208,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   });
 
   app.post<{ Params: { deviceId: string } }>("/v1/connection/trusted-devices/:deviceId/revoke", async (request, reply) => {
-    const auth = await authenticateRequest(pairing, request, reply);
+    const auth = await authenticateRequest(pairing, request, reply, "devices.revoke");
     if (!auth) {
       return;
     }
@@ -195,13 +220,16 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     bridge: [
       { id: "connection.health", title: "Connection health", status: "Live", notes: "Local Fastify health endpoint is implemented." },
       { id: "connection.qr-pairing", title: "QR pairing protocol", status: "Live", notes: "Expiring session, replay rejection, desktop approval, and trust registry are fully implemented." },
-      { id: "workspace.roots", title: "Approved workspace roots", status: "Live", notes: "Root confinement is enforced." }
+      { id: "workspace.roots", title: "Approved workspace roots", status: "Live", notes: "Root confinement is enforced." },
+      { id: "permissions.roles", title: "Bridge role guards", status: "Live", notes: "Owner, Admin, Reviewer, Agent, and Viewer permissions are enforced on bridge endpoints." },
+      { id: "models.contract", title: "Provider/model/runtime contract", status: "Live", notes: "Model payloads distinguish Provider, Model, and Agent Runtime." }
     ],
+    permissions: publicPermissionMatrix(),
     antigravity: await adapter.getCapabilities()
   }));
 
   app.get("/v1/workspace/roots", async (request, reply) => {
-    const auth = await authenticateRequest(pairing, request, reply);
+    const auth = await authenticateRequest(pairing, request, reply, "workspace.read");
     if (!auth) {
       return;
     }
@@ -215,15 +243,16 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   });
 
   app.get<{ Querystring: { rootId?: string; path?: string } }>("/v1/workspace/browse", async (request, reply) => {
-    const auth = await authenticateRequest(pairing, request, reply);
+    const auth = await authenticateRequest(pairing, request, reply, "workspace.read");
     if (!auth) {
       return;
     }
-    if (!request.query.rootId) {
-      return reply.code(400).send({ error: "ROOT_REQUIRED" });
+    const parsed = parseRequest(WorkspaceBrowseQuerySchema, request.query, reply);
+    if (!parsed) {
+      return;
     }
     try {
-      const nodes = await browser.browse(request.query.rootId, request.query.path ?? ".");
+      const nodes = await browser.browse(parsed.rootId, parsed.path);
       return nodes.map((node) => ({
         id: node.path,
         name: node.name,
@@ -240,15 +269,16 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   });
 
   app.get<{ Querystring: { rootId?: string; path?: string } }>("/v1/workspace/file", async (request, reply) => {
-    const auth = await authenticateRequest(pairing, request, reply);
+    const auth = await authenticateRequest(pairing, request, reply, "workspace.read");
     if (!auth) {
       return;
     }
-    if (!request.query.rootId || !request.query.path) {
-      return reply.code(400).send({ error: "ROOT_AND_PATH_REQUIRED" });
+    const parsed = parseRequest(WorkspaceFileQuerySchema, request.query, reply);
+    if (!parsed) {
+      return;
     }
     try {
-      return await browser.readTextFile(request.query.rootId, request.query.path);
+      return await browser.readTextFile(parsed.rootId, parsed.path);
     } catch (error) {
       if (error instanceof WorkspaceError) {
         return reply.code(error.code === "PATH_TRAVERSAL" ? 403 : 404).send({ error: error.code });
@@ -258,13 +288,16 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   });
 
   app.post<{ Body: { rootId: string; path: string; name: string } }>("/v1/workspace/create-folder", async (request, reply) => {
-    const auth = await authenticateRequest(pairing, request, reply);
+    const auth = await authenticateRequest(pairing, request, reply, "workspace.write");
     if (!auth) {
       return;
     }
-    const { rootId, path, name } = request.body;
+    const parsed = parseRequest(WorkspaceCreateFolderRequestSchema, request.body, reply);
+    if (!parsed) {
+      return;
+    }
     try {
-      const relative = await browser.createFolder(rootId, path, name);
+      const relative = await browser.createFolder(parsed.rootId, parsed.path, parsed.name);
       return { status: "created", path: relative };
     } catch (error) {
       if (error instanceof WorkspaceError) {
@@ -275,7 +308,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   });
 
   app.get("/v1/spaces", async (request, reply) => {
-    const auth = await authenticateRequest(pairing, request, reply);
+    const auth = await authenticateRequest(pairing, request, reply, "spaces.read");
     if (!auth) {
       return;
     }
@@ -296,17 +329,20 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   });
 
   app.post<{ Body: { rootId: string; path: string; fileName: string; base64Data: string } }>("/v1/workspace/import-image", async (request, reply) => {
-    const auth = await authenticateRequest(pairing, request, reply);
+    const auth = await authenticateRequest(pairing, request, reply, "workspace.write");
     if (!auth) {
       return;
     }
-    const { rootId, path: relativePath, fileName, base64Data } = request.body;
-    if (!rootId || !relativePath || !fileName || !base64Data) {
-      return reply.code(400).send({ error: "INVALID_IMAGE_IMPORT_REQUEST" });
+    const parsed = parseRequest(WorkspaceImportImageRequestSchema, request.body, reply);
+    if (!parsed) {
+      return;
     }
     try {
-      const buffer = Buffer.from(base64Data, "base64");
-      const savedPath = await browser.writeBinaryFile(rootId, relativePath, fileName, buffer);
+      if (!isProbablyBase64(parsed.base64Data)) {
+        return reply.code(400).send({ error: "INVALID_REQUEST", message: "Image payload is invalid." });
+      }
+      const buffer = Buffer.from(parsed.base64Data, "base64");
+      const savedPath = await browser.writeBinaryFile(parsed.rootId, parsed.path, parsed.fileName, buffer);
       return { status: "created", path: savedPath };
     } catch (error) {
       if (error instanceof WorkspaceError) {
@@ -317,15 +353,16 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   });
 
   app.get("/v1/models", async (request, reply) => {
-    const auth = await authenticateRequest(pairing, request, reply);
+    const auth = await authenticateRequest(pairing, request, reply, "models.read");
     if (!auth) {
       return;
     }
-    return (adapter as AntigravityCliAccountAdapter).availableModels();
+    const models = await (adapter as AntigravityCliAccountAdapter).availableModels();
+    return z.array(ModelDescriptorSchema).parse(models);
   });
 
   app.get("/v1/plugins", async (request, reply) => {
-    const auth = await authenticateRequest(pairing, request, reply);
+    const auth = await authenticateRequest(pairing, request, reply, "tools.read");
     if (!auth) {
       return;
     }
@@ -345,7 +382,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   });
 
   app.get("/v1/tools", async (request, reply) => {
-    const auth = await authenticateRequest(pairing, request, reply);
+    const auth = await authenticateRequest(pairing, request, reply, "tools.read");
     if (!auth) {
       return;
     }
@@ -353,35 +390,59 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   });
 
   app.post("/v1/tasks", async (request, reply) => {
-    const auth = await authenticateRequest(pairing, request, reply);
+    const auth = await authenticateRequest(pairing, request, reply, "tasks.create");
     if (!auth) {
       return;
     }
-    const body = request.body as any;
-    const { spaceId, title, prompt, workspaceRoot, selectedModelId } = body;
-    const conv = await (adapter as AntigravityCliAccountAdapter).createConversation(spaceId, title || "New task");
-    await (adapter as AntigravityCliAccountAdapter).chat(conv.conversationId, prompt, workspaceRoot, selectedModelId);
-    return conv;
+    const body = parseRequest(CreateTaskRequestSchema, request.body, reply);
+    if (!body) {
+      return;
+    }
+    const key = idempotencyKey(request, body.clientRequestId, auth.id, "tasks.create");
+    if (!key) {
+      return reply.code(400).send({ error: "IDEMPOTENCY_KEY_REQUIRED", message: "A clientRequestId is required for task creation." });
+    }
+
+    return runIdempotent(idempotency, key, async () => {
+      const title = body.title || firstLine(body.prompt) || "New task";
+      const conv = await (adapter as AntigravityCliAccountAdapter).createConversation(body.spaceId, title, body.clientRequestId);
+      await (adapter as AntigravityCliAccountAdapter).chat(conv.conversationId, body.prompt, body.workspaceRoot, body.selectedModelId);
+      return conv;
+    });
   });
 
   app.post<{ Params: { taskId: string } }>("/v1/tasks/:taskId/messages", async (request, reply) => {
-    const auth = await authenticateRequest(pairing, request, reply);
+    const auth = await authenticateRequest(pairing, request, reply, "tasks.message");
     if (!auth) {
       return;
     }
-    const body = request.body as any;
-    const { prompt, workspaceRoot } = body;
-    await (adapter as AntigravityCliAccountAdapter).chat(request.params.taskId, prompt, workspaceRoot);
+    const params = parseRequest(TaskIdParamsSchema, request.params, reply);
+    const body = parseRequest(SendTaskMessageRequestSchema, request.body, reply);
+    if (!params || !body) {
+      return;
+    }
+    const key = idempotencyKey(request, body.clientRequestId, auth.id, `tasks.message:${params.taskId}`);
+    if (key) {
+      return runIdempotent(idempotency, key, async () => {
+        await (adapter as AntigravityCliAccountAdapter).chat(params.taskId, body.prompt, body.workspaceRoot);
+        return { status: "sent" };
+      });
+    }
+    await (adapter as AntigravityCliAccountAdapter).chat(params.taskId, body.prompt, body.workspaceRoot);
     return { status: "sent" };
   });
 
   app.get<{ Params: { taskId: string } }>("/v1/tasks/:taskId", async (request, reply) => {
-    const auth = await authenticateRequest(pairing, request, reply);
+    const auth = await authenticateRequest(pairing, request, reply, "tasks.read");
     if (!auth) {
       return;
     }
+    const params = parseRequest(TaskIdParamsSchema, request.params, reply);
+    if (!params) {
+      return;
+    }
     const chats = await (adapter as AntigravityCliAccountAdapter).listConversations().catch(() => []);
-    const chat = chats.find((c: any) => c.id === request.params.taskId);
+    const chat = chats.find((c: any) => c.id === params.taskId);
     if (!chat) {
       return reply.code(404).send({ error: "CHAT_NOT_FOUND" });
     }
@@ -390,10 +451,11 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
 
   app.get("/v1/tasks/:taskId/events", { websocket: true }, async (socket: WebSocket, request) => {
     try {
-      await pairing.authenticate(
+      const device = await pairing.authenticate(
         String(request.headers["x-mg-device-id"] ?? ""),
         parseBearer(request.headers.authorization)
       );
+      requirePermission(device, "tasks.read");
       
       const taskId = (request.params as { taskId: string }).taskId;
       
@@ -426,25 +488,39 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
       });
     }
     if (error instanceof UnsupportedCapabilityError) {
-      return reply.code(501).send({ error: "UNSUPPORTED", detail: error.message });
+      return reply.code(501).send({ error: "UNSUPPORTED", message: error.message });
+    }
+    if (error instanceof PermissionError) {
+      return reply.code(403).send({ error: "FORBIDDEN", message: "This trusted device is not allowed to perform that action." });
+    }
+    if (error instanceof z.ZodError) {
+      return reply.code(500).send({ error: "CONTRACT_MISMATCH", message: "Bridge response did not match its public contract." });
     }
     const message = error instanceof Error ? error.message : String(error);
-    return reply.code(500).send({ error: "INTERNAL_ERROR", detail: redactSensitive(message) });
+    _request.log.error({ error: redactSensitive(message) }, "Bridge request failed");
+    return reply.code(500).send({ error: "INTERNAL_ERROR", message: "The bridge could not complete the request." });
   });
 
   return app;
 }
 
-async function authenticateRequest(pairing: PairingManager, request: any, reply: any): Promise<boolean> {
+async function authenticateRequest(pairing: PairingManager, request: any, reply: any, action?: BridgeAction): Promise<Awaited<ReturnType<PairingManager["authenticate"]>> | undefined> {
   try {
-    await pairing.authenticate(
+    const device = await pairing.authenticate(
       String(request.headers["x-mg-device-id"] ?? ""),
       parseBearer(request.headers.authorization)
     );
-    return true;
+    if (action) {
+      requirePermission(device, action);
+    }
+    return device;
   } catch (error) {
+    if (error instanceof PermissionError) {
+      reply.code(403).send({ error: "FORBIDDEN", message: "This trusted device is not allowed to perform that action." });
+      return undefined;
+    }
     sendPairingError(reply, error);
-    return false;
+    return undefined;
   }
 }
 
@@ -461,28 +537,110 @@ function sendPairingError(reply: any, error: unknown): any {
     if (error.code === "DEVICE_UNKNOWN" || error.code === "DEVICE_SECRET_INVALID" || error.code === "DEVICE_REVOKED") {
       status = 401;
     }
-    return reply.code(status).send({ error: error.code, detail: error.message });
+    return reply.code(status).send({ error: error.code, message: permissionSafePairingMessage(error.code) });
   }
   throw error;
 }
 
-function mapConversation(c: any) {
-  const isRunning = [
-    "Planning changes",
-    "Reading files",
-    "Checking workspace",
-    "Updating styles",
-    "Applying changes",
-    "Running commands",
-    "Running tests",
-    "Awaiting approval"
-  ].includes(c.status);
+function parseRequest<T>(schema: ZodSchema<T>, input: unknown, reply: any): T | undefined {
+  const parsed = schema.safeParse(input);
+  if (parsed.success) {
+    return parsed.data;
+  }
+  reply.code(400).send({
+    error: "INVALID_REQUEST",
+    message: "Request payload is invalid.",
+    issues: parsed.error.issues.map((issue) => ({
+      path: issue.path.join("."),
+      message: issue.message
+    }))
+  });
+  return undefined;
+}
 
-  const timeline = [];
-  let stateTone = "neutral";
-  
-  if (c.status === "Task completed") {
-    stateTone = "good";
+function requireLocalRequest(request: any, reply: any): boolean {
+  const ip = String(request.ip ?? "");
+  if (ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1") {
+    return true;
+  }
+  reply.code(403).send({ error: "LOCAL_ONLY", message: "This bridge operation must be approved on the desktop." });
+  return false;
+}
+
+function permissionSafePairingMessage(code: PairingError["code"]): string {
+  switch (code) {
+    case "DEVICE_UNKNOWN":
+    case "DEVICE_SECRET_INVALID":
+    case "DEVICE_REVOKED":
+      return "Device authorization failed.";
+    case "PAIRING_EXPIRED":
+    case "PENDING_DEVICE_EXPIRED":
+      return "Pairing expired. Start a new pairing session.";
+    case "PAIRING_REPLAY":
+      return "Pairing session was already used.";
+    case "PAIRING_TOKEN_INVALID":
+      return "Pairing code is invalid.";
+    case "PENDING_DEVICE_NOT_FOUND":
+      return "Pairing request was not found.";
+    case "PAIRING_NOT_FOUND":
+    default:
+      return "Pairing session was not found.";
+  }
+}
+
+function idempotencyKey(request: any, bodyKey: string | undefined, deviceId: string, operation: string): string | undefined {
+  const headerKey = request.headers["x-mg-idempotency-key"];
+  const raw = Array.isArray(headerKey) ? headerKey[0] : headerKey;
+  const key = String(raw ?? bodyKey ?? "").trim();
+  if (!key) {
+    return undefined;
+  }
+  return `${deviceId}:${operation}:${key}`;
+}
+
+async function runIdempotent<T>(store: Map<string, Promise<unknown>>, key: string, operation: () => Promise<T>): Promise<T> {
+  const existing = store.get(key);
+  if (existing) {
+    return (await existing) as T;
+  }
+
+  const pending = operation().finally(() => {
+    setTimeout(() => store.delete(key), 60_000).unref();
+  });
+  store.set(key, pending);
+  return pending;
+}
+
+function firstLine(value: string): string | undefined {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean)
+    ?.slice(0, 180);
+}
+
+function isProbablyBase64(value: string): boolean {
+  return /^[A-Za-z0-9+/]+={0,2}$/.test(value) && value.length % 4 === 0;
+}
+
+function mapConversation(c: any) {
+  const transcript = readVisibleTranscript(c);
+  const status = normalizeTaskStatus(c.status);
+  const isRunning = isRunningStatus(status);
+  const stateTone = toneForStatus(status);
+  const messages = transcript.messages.length > 0 ? transcript.messages : [
+    {
+      id: `${c.id}-msg-user`,
+      role: "user",
+      body: c.prompt || `Start task: ${c.title}`,
+      timestamp: c.createdAt,
+      delivered: true,
+      attachments: [] as any[]
+    }
+  ];
+
+  const timeline = [...transcript.timeline];
+  if (status === "Task completed") {
     timeline.push({
       id: `${c.id}-completed`,
       title: "Task completed",
@@ -491,22 +649,20 @@ function mapConversation(c: any) {
       tone: "good",
       isComplete: true
     });
-  } else if (c.status === "Task failed") {
-    stateTone = "critical";
+  } else if (status === "Task failed") {
     timeline.push({
       id: `${c.id}-failed`,
       title: "Task failed",
-      detail: c.lastError || "Task execution failed.",
+      detail: safeUserDetail(c.lastError) || "Task execution failed.",
       duration: "0s",
       tone: "critical",
       isComplete: true
     });
   } else {
-    stateTone = c.status === "Awaiting approval" ? "warning" : "neutral";
     timeline.push({
       id: `${c.id}-current`,
-      title: c.status,
-      detail: "Live step streamed from bridge...",
+      title: status,
+      detail: "Live step streamed from bridge.",
       duration: "Live",
       tone: stateTone,
       isComplete: false
@@ -522,38 +678,211 @@ function mapConversation(c: any) {
     thread: {
       id: c.id,
       title: c.title,
-      stateText: c.status,
+      stateText: status,
       stateTone: stateTone,
-      messages: [
-        {
-          id: `${c.id}-msg-user`,
-          role: "user",
-          body: c.prompt || `Start task: ${c.title}`,
-          timestamp: c.createdAt,
-          delivered: true,
-          attachments: []
-        }
-      ],
+      messages: messages,
       timeline: timeline,
-      files: [],
-      diffs: [],
-      commands: [],
-      approval: c.status === "Awaiting approval" ? {
+      files: transcript.files,
+      diffs: transcript.diffs,
+      commands: transcript.commands,
+      approval: status === "Awaiting approval" ? {
         id: `${c.id}-approval`,
         title: "Approval required",
         summary: "Agent is awaiting permission to proceed.",
         scope: "Command/Write action",
         affectedItems: []
       } : null,
-      completion: c.status === "Task completed" ? {
+      completion: status === "Task completed" ? {
         summary: "Task finished successfully.",
-        filesChanged: 0,
+        filesChanged: transcript.files.length,
         linesAdded: 0,
         linesRemoved: 0,
-        checksRun: [],
+        checksRun: transcript.commands.map((cmd: any) => cmd.command),
         warnings: [],
-        fullReply: "The task was completed successfully."
+        fullReply: transcript.fullReply || "The task was completed successfully."
       } : null
     }
   };
+}
+
+function readVisibleTranscript(c: any) {
+  const output = {
+    messages: [] as any[],
+    timeline: [] as any[],
+    files: [] as string[],
+    diffs: [] as any[],
+    commands: [] as any[],
+    fullReply: ""
+  };
+
+  if (!c.realId) {
+    return output;
+  }
+
+  const logFile = path.join(
+    process.env.USERPROFILE ?? "C:\\Users\\kuroi",
+    ".gemini",
+    "antigravity",
+    "brain",
+    c.realId,
+    ".system_generated",
+    "logs",
+    "transcript.jsonl"
+  );
+  if (!existsSync(logFile)) {
+    return output;
+  }
+
+  try {
+    const lines = readFileSync(logFile, "utf8").split(/\r?\n/).filter((line) => line.trim());
+    for (const line of lines) {
+      const step = JSON.parse(line);
+      const timestamp = step.created_at || step.timestamp || c.createdAt;
+      const stepIndex = String(step.step_index ?? output.timeline.length);
+
+      if (step.source === "USER_EXPLICIT" && step.type === "USER_INPUT") {
+        const body = visibleUserContent(step.content);
+        if (body) {
+          output.messages.push({
+            id: `${c.id}-msg-user-${stepIndex}`,
+            role: "user",
+            body,
+            timestamp,
+            delivered: true,
+            attachments: []
+          });
+        }
+      }
+
+      if (step.source === "MODEL" && step.type === "PLANNER_RESPONSE" && typeof step.content === "string" && step.content.trim()) {
+        const body = safeUserDetail(step.content, 12_000);
+        output.fullReply = body;
+        output.messages.push({
+          id: `${c.id}-msg-assistant-${stepIndex}`,
+          role: "assistant",
+          body,
+          timestamp,
+          delivered: true,
+          attachments: []
+        });
+      }
+
+      for (const toolCall of step.tool_calls ?? []) {
+        const mapped = mapToolCall(c.id, stepIndex, toolCall);
+        output.timeline.push(mapped.event);
+        if (mapped.file && !output.files.includes(mapped.file)) {
+          output.files.push(mapped.file);
+        }
+        if (mapped.command) {
+          output.commands.push(mapped.command);
+        }
+      }
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    output.timeline.push({
+      id: `${c.id}-transcript-read-failed`,
+      title: "Transcript unavailable",
+      detail: safeUserDetail(detail),
+      duration: "0s",
+      tone: "warning",
+      isComplete: true
+    });
+  }
+
+  return output;
+}
+
+function visibleUserContent(raw: unknown): string {
+  if (typeof raw !== "string") {
+    return "";
+  }
+  const match = raw.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/);
+  return safeUserDetail((match ? match[1] : raw).trim(), 12_000);
+}
+
+function mapToolCall(taskId: string, stepIndex: string, toolCall: any) {
+  const name = String(toolCall.name ?? "agent step");
+  const args = toolCall.args ?? {};
+  let title = name;
+  let detail = "";
+  let file: string | undefined;
+  let command: any | undefined;
+
+  if (name === "run_command") {
+    title = "Running command";
+    detail = String(args.CommandLine ?? args.command ?? "");
+    command = {
+      id: `${taskId}-cmd-${stepIndex}`,
+      command: safeUserDetail(detail, 2_000),
+      result: "Started",
+      duration: "Live",
+      output: "Command output is streamed through the bridge when available."
+    };
+  } else if (["view_file", "read_file", "view_file_content", "list_dir", "list_directory", "grep_search"].includes(name)) {
+    title = "Reading workspace";
+    detail = String(args.AbsolutePath ?? args.DirectoryPath ?? args.SearchPath ?? args.path ?? args.TargetFile ?? "");
+    file = detail ? path.basename(detail) : undefined;
+  } else if (["write_to_file", "replace_file_content", "multi_replace_file_content", "write_file", "edit_file", "create_file"].includes(name)) {
+    title = "Applying changes";
+    detail = String(args.TargetFile ?? args.path ?? "");
+    file = detail ? path.basename(detail) : undefined;
+  }
+
+  return {
+    file,
+    command,
+    event: {
+      id: `${taskId}-event-${stepIndex}-${name}`,
+      title,
+      detail: safeUserDetail(detail || "Agent step in progress.", 300),
+      duration: "Live",
+      tone: "neutral",
+      isComplete: true
+    }
+  };
+}
+
+function normalizeTaskStatus(status: unknown): string {
+  const value = typeof status === "string" && status.trim() ? status.trim() : "Planning changes";
+  if (value === "Running command") {
+    return "Running commands";
+  }
+  if (value === "Reading workspace") {
+    return "Reading files";
+  }
+  return value;
+}
+
+function isRunningStatus(status: string): boolean {
+  return [
+    "Starting Antigravity task",
+    "Planning changes",
+    "Reading files",
+    "Checking workspace",
+    "Updating styles",
+    "Applying changes",
+    "Running commands",
+    "Running tests",
+    "Awaiting approval",
+    "Running task"
+  ].includes(status);
+}
+
+function toneForStatus(status: string): string {
+  if (status === "Task completed") {
+    return "good";
+  }
+  if (status === "Task failed") {
+    return "critical";
+  }
+  if (status === "Awaiting approval") {
+    return "warning";
+  }
+  return "neutral";
+}
+
+function safeUserDetail(value: unknown, maxLength = 300): string {
+  const text = typeof value === "string" ? value : String(value ?? "");
+  return String(redactSensitive(text)).replace(/\s+/g, " ").trim().slice(0, maxLength);
 }

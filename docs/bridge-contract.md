@@ -99,6 +99,26 @@ Thread payloads must include:
 - `defaultTaskBehavior`
 - `notificationSupport`
 
+Model payloads must keep these concepts separate:
+
+- Provider: `Antigravity` or another provider only when that provider is actually configured.
+- Model: the provider-owned model or route name.
+- Agent Runtime: the desktop runtime that executes the work, such as `Antigravity Agent CLI`.
+
+Antigravity routes must be labeled as Antigravity routes. The bridge must not expose them as a different provider's models.
+
+## Roles and permissions
+
+Trusted devices carry one bridge role:
+
+- `Owner`
+- `Admin`
+- `Reviewer`
+- `Agent`
+- `Viewer`
+
+The bridge is the source of truth for enforcement. The mobile app may hide unavailable controls, but every sensitive endpoint still checks the trusted-device role server-side.
+
 ## Unsupported capability policy
 
 If Antigravity does not support a requested remote control action through official CLI or SDK surfaces, the bridge must return an explicit capability response and the app must degrade to one of:
@@ -113,12 +133,28 @@ The app must not invent unsupported controls.
 
 - `GET /v1/connection/health`
 - `POST /v1/connection/pairing-sessions`
+- `GET /v1/connection/active-session`
+- `POST /v1/connection/trust/register`
+- `GET /v1/connection/trust/status`
+- `GET /v1/connection/pending-devices` local desktop only
+- `POST /v1/connection/pending-devices/:id/approve` local desktop only
+- `POST /v1/connection/pending-devices/:id/reject` local desktop only
 - `POST /v1/connection/trust`
 - `GET /v1/connection/trusted-devices`
 - `POST /v1/connection/trusted-devices/:deviceId/revoke`
 - `GET /v1/capabilities`
 - `GET /v1/workspace/roots`
 - `GET /v1/workspace/browse`
+- `GET /v1/workspace/file`
+- `POST /v1/workspace/create-folder`
+- `POST /v1/workspace/import-image`
+- `GET /v1/spaces`
+- `GET /v1/models`
+- `GET /v1/tools`
+- `GET /v1/plugins`
+- `POST /v1/tasks`
+- `POST /v1/tasks/:taskId/messages`
+- `GET /v1/tasks/:taskId`
 - `GET /v1/tasks/:taskId/events` as authenticated WebSocket
 
-Workspace and trusted-device management endpoints require trusted-device credentials.
+Workspace, task, model, tool, and trusted-device management endpoints require trusted-device credentials. Task creation requires a client idempotency key (`clientRequestId` or `X-MG-Idempotency-Key`) so repeated taps or reconnect retries do not create duplicate sensitive operations.

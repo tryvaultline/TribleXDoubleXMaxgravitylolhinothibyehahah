@@ -28,27 +28,16 @@ struct MGBrandWordmark: View {
     }
 }
 
-struct MGGoogleAvatar: View {
+struct MGAntigravityAvatar: View {
     var size: CGFloat = 34
 
     var body: some View {
         let radius = size * 0.3
         ZStack {
             RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.24, green: 0.52, blue: 0.96),
-                            Color(red: 0.20, green: 0.80, blue: 0.54),
-                            Color(red: 0.98, green: 0.73, blue: 0.16),
-                            Color(red: 0.92, green: 0.29, blue: 0.25)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-            Text("G")
-                .font(.system(size: size * 0.44, weight: .bold))
+                .fill(MGTheme.brandGradient)
+            Image(systemName: "sparkles")
+                .font(.system(size: size * 0.42, weight: .bold))
                 .foregroundStyle(.white)
         }
         .frame(width: size, height: size)
@@ -134,7 +123,7 @@ struct MGConnectionPill: View {
                     Text(status.computerName)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(MGTheme.primaryText)
-                    Text("\(status.isOnline ? "Online" : "Offline") • \(status.quality.title)")
+                    Text("\(status.isOnline ? "Online" : "Offline") - \(status.quality.title)")
                         .font(.caption)
                         .foregroundStyle(MGTheme.secondaryText)
                 }
@@ -230,7 +219,7 @@ struct MGSpaceRow: View {
                 .padding(.bottom, 16)
             }
         }
-        .mgReadableSurface(cornerRadius: 28)
+        .mgInteractiveGlass(cornerRadius: 28)
     }
 
     private func iconWell(symbol: String) -> some View {
@@ -330,7 +319,6 @@ struct MGPrimaryActionButton: View {
 }
 
 struct MGDarkGlassSheet<Content: View>: View {
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -345,81 +333,18 @@ struct MGDarkGlassSheet<Content: View>: View {
         }
         .padding(.horizontal, 18)
         .padding(.bottom, 18)
-        .background(sheetBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 34, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 34, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(0.38), radius: 26, y: 14)
-    }
-
-    @ViewBuilder
-    private var sheetBackground: some View {
-        if reduceTransparency {
-            RoundedRectangle(cornerRadius: 34, style: .continuous)
-                .fill(Color(red: 0.10, green: 0.10, blue: 0.11))
-        } else {
-            RoundedRectangle(cornerRadius: 34, style: .continuous)
-                .fill(.thinMaterial)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 34, style: .continuous)
-                        .fill(Color(red: 0.08, green: 0.08, blue: 0.09).opacity(0.82))
-                }
-                .overlay(alignment: .top) {
-                    RoundedRectangle(cornerRadius: 34, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.14), Color.clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .frame(height: 42)
-                        .clipShape(RoundedRectangle(cornerRadius: 34, style: .continuous))
-                }
-        }
+        .mgInteractiveGlass(cornerRadius: 34)
     }
 }
 
 struct MGDarkGlassCard<Content: View>: View {
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var cornerRadius: CGFloat = 28
     @ViewBuilder var content: Content
 
     var body: some View {
         content
             .padding(20)
-            .background {
-                if reduceTransparency {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(Color(red: 0.13, green: 0.13, blue: 0.14))
-                } else {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                                .fill(Color(red: 0.12, green: 0.12, blue: 0.13).opacity(0.76))
-                        }
-                        .overlay(alignment: .top) {
-                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [Color.white.opacity(0.12), Color.clear],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                                )
-                                .frame(height: 34)
-                                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                        }
-                }
-            }
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(Color.white.opacity(0.07), lineWidth: 1)
-            )
-            .shadow(color: Color.black.opacity(0.24), radius: 18, y: 12)
+            .mgInteractiveGlass(cornerRadius: cornerRadius)
     }
 }
 
@@ -450,11 +375,12 @@ struct MGGlassIconWell: View {
 
 struct MGComposerAccessoryBar: View {
     let selectedModel: String
-    let models: [MGModelOption]
+    let isSending: Bool
+    let canSend: Bool
     var onPlus: () -> Void
     var onSlash: () -> Void
     var onMention: () -> Void
-    var onSelectModel: (MGModelOption) -> Void
+    var onModelPicker: () -> Void
     var onMicrophone: () -> Void
     var onSend: () -> Void
 
@@ -465,21 +391,7 @@ struct MGComposerAccessoryBar: View {
             iconButton(symbol: "@", action: onMention, label: "Mention file", usesText: true)
             Spacer(minLength: 10)
 
-            Menu {
-                ForEach(models) { model in
-                    Button {
-                        onSelectModel(model)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Label(model.title, systemImage: model.isRecommended ? "checkmark.circle.fill" : "circle")
-                            if let speed = model.speedLabel, let effort = model.effortLabel {
-                                Text("Speed: \(speed) • Effort: \(effort)")
-                                    .font(.caption2)
-                            }
-                        }
-                    }
-                }
-            } label: {
+            Button(action: onModelPicker) {
                 HStack(spacing: 8) {
                     Image(systemName: "sparkles.rectangle.stack.fill")
                     Text(selectedModel)
@@ -496,13 +408,22 @@ struct MGComposerAccessoryBar: View {
             iconButton(symbol: "mic.fill", action: onMicrophone, label: "Microphone")
 
             Button(action: onSend) {
-                Image(systemName: "arrow.up")
-                    .font(.body.weight(.bold))
-                    .foregroundStyle(.black)
-                    .frame(width: 44, height: 44)
-                    .background(Color.white, in: Circle())
+                if isSending {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(.black.opacity(0.82))
+                        .frame(width: 44, height: 44)
+                        .background(Color.white.opacity(0.72), in: Circle())
+                } else {
+                    Image(systemName: "arrow.up")
+                        .font(.body.weight(.bold))
+                        .foregroundStyle(.black)
+                        .frame(width: 44, height: 44)
+                        .background(canSend ? Color.white : Color.white.opacity(0.38), in: Circle())
+                }
             }
             .buttonStyle(MGPressableButtonStyle())
+            .disabled(!canSend || isSending)
             .accessibilityLabel("Send task")
         }
     }
@@ -531,7 +452,7 @@ struct MGComposerAccessoryBar: View {
 struct MGComposer: View {
     @Binding var text: String
     let selectedModel: String
-    let modelOptions: [MGModelOption]
+    let isSending: Bool
     let mentionedFiles: [String]
     let pickedPhotos: [MGPickedPhoto]
     let onRemoveFile: (String) -> Void
@@ -539,7 +460,7 @@ struct MGComposer: View {
     let onPlus: () -> Void
     let onSlash: () -> Void
     let onMention: () -> Void
-    let onSelectModel: (MGModelOption) -> Void
+    let onModelPicker: () -> Void
     let onMicrophone: () -> Void
     let onSend: () -> Void
 
@@ -594,7 +515,7 @@ struct MGComposer: View {
 
             ZStack(alignment: .topLeading) {
                 if text.isEmpty {
-                    Text("Describe what you want Maxgravity to build, change, review, or investigate…")
+                    Text("Message Antigravity...")
                         .font(.body)
                         .foregroundStyle(MGTheme.tertiaryText)
                         .padding(.top, 8)
@@ -621,17 +542,70 @@ struct MGComposer: View {
 
             MGComposerAccessoryBar(
                 selectedModel: selectedModel,
-                models: modelOptions,
+                isSending: isSending,
+                canSend: !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                 onPlus: onPlus,
                 onSlash: onSlash,
                 onMention: onMention,
-                onSelectModel: onSelectModel,
+                onModelPicker: onModelPicker,
                 onMicrophone: onMicrophone,
                 onSend: onSend
             )
         }
         .padding(16)
-        .mgReadableSurface(cornerRadius: 30)
+        .mgInteractiveGlass(cornerRadius: 30)
+    }
+}
+
+struct MGThreadReplyComposer: View {
+    @Binding var text: String
+    let isSending: Bool
+    let onSend: () -> Void
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 10) {
+            TextField("Message Antigravity", text: $text, axis: .vertical)
+                .lineLimit(1...5)
+                .textInputAutocapitalization(.sentences)
+                .font(.body)
+                .foregroundStyle(MGTheme.primaryText)
+                .tint(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+
+            Button(action: onSend) {
+                if isSending {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(.black.opacity(0.82))
+                        .frame(width: 42, height: 42)
+                        .background(Color.white.opacity(0.72), in: Circle())
+                } else {
+                    Image(systemName: "arrow.up")
+                        .font(.body.weight(.bold))
+                        .foregroundStyle(.black)
+                        .frame(width: 42, height: 42)
+                        .background(canSend ? Color.white : Color.white.opacity(0.38), in: Circle())
+                }
+            }
+            .buttonStyle(MGPressableButtonStyle())
+            .disabled(!canSend || isSending)
+            .accessibilityLabel("Send message")
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 10)
+        .padding(.bottom, 10)
+        .background(MGTheme.background.opacity(0.96))
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(MGTheme.border)
+                .frame(height: 1)
+        }
+    }
+
+    private var canSend: Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
 
@@ -773,7 +747,7 @@ struct MGDiffSummary: View {
             Spacer()
         }
         .padding(12)
-        .mgReadableSurface(cornerRadius: 20)
+        .mgInteractiveGlass(cornerRadius: 20)
     }
 }
 
@@ -818,7 +792,7 @@ struct MGApprovalPanel: View {
             }
         }
         .padding(18)
-        .mgReadableSurface(cornerRadius: 28)
+        .mgInteractiveGlass(cornerRadius: 28)
     }
 }
 
@@ -988,6 +962,7 @@ struct MGModelPicker: View {
         NavigationStack {
             List(appModel.models) { model in
                 Button {
+                    guard model.availability == .live else { return }
                     appModel.updateDraftModel(model)
                     dismiss()
                 } label: {
@@ -1003,8 +978,11 @@ struct MGModelPicker: View {
                                     .font(.caption)
                                     .foregroundStyle(MGTheme.secondaryText)
                             }
+                            Text(model.contractSummary)
+                                .font(.caption2)
+                                .foregroundStyle(MGTheme.tertiaryText)
                             if let speed = model.speedLabel, let effort = model.effortLabel {
-                                Text("Speed: \(speed) • Effort: \(effort)")
+                                Text("Speed: \(speed) - Effort: \(effort)")
                                     .font(.caption2)
                                     .foregroundStyle(MGTheme.tertiaryText)
                             }
@@ -1017,6 +995,8 @@ struct MGModelPicker: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .disabled(model.availability != .live)
+                .opacity(model.availability == .live ? 1 : 0.58)
                 .listRowBackground(Color.clear)
             }
             .scrollContentBackground(.hidden)
@@ -1040,7 +1020,7 @@ struct MGSettingsGroup<Content: View>: View {
                 content
             }
             .padding(14)
-            .mgReadableSurface(cornerRadius: 26)
+            .mgInteractiveGlass(cornerRadius: 26)
         }
     }
 }

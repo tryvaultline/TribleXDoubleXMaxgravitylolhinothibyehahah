@@ -206,3 +206,18 @@ describe("5. Rate Limiting", () => {
     await app.close();
   });
 });
+
+describe("6. Local-only desktop approval routes", () => {
+  it("rejects pending-device approval routes from non-loopback clients", async () => {
+    const app = await buildServer();
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/connection/pending-devices",
+      remoteAddress: "192.168.1.50"
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error).toBe("LOCAL_ONLY");
+    await app.close();
+  });
+});

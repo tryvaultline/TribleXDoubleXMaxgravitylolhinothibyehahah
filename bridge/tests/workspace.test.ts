@@ -22,4 +22,12 @@ describe("WorkspaceBrowser", () => {
 
     expect(() => browser.resolve("root", "../outside")).toThrow(/escapes/);
   });
+
+  it("rejects unsafe leaf names for created folders and imported files", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "mg-root-"));
+    const browser = new WorkspaceBrowser([{ id: "root", name: "Root", path: root }]);
+
+    await expect(browser.createFolder("root", ".", "../escape")).rejects.toThrow(/invalid/);
+    await expect(browser.writeBinaryFile("root", ".", "..\\escape.jpg", Buffer.from("x"))).rejects.toThrow(/invalid/);
+  });
 });

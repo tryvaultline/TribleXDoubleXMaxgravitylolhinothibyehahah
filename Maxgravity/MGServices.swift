@@ -335,7 +335,13 @@ class MGRealBridgeClient: MGBridgeClient, MGSpacesRepository, MGTasksRepository,
         }
         
         while true {
-            let (statusData, statusResponse) = try await urlSession.data(for: statusRequest)
+            let (statusData, statusResponse) = try await pinnedData(
+                for: statusRequest,
+                address: payload.address,
+                fallbackHost: payload.httpsHost,
+                expectedFingerprint: payload.bridgeFingerprint,
+                mismatchReason: .pairing
+            )
             guard let statusHttpResponse = statusResponse as? HTTPURLResponse, statusHttpResponse.statusCode == 200 else {
                 throw NSError(domain: "MGRealBridgeClient", code: 401, userInfo: [NSLocalizedDescriptionKey: "Pairing was rejected or session expired."])
             }
